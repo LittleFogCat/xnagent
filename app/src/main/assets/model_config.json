@@ -1,0 +1,125 @@
+{
+  "default": "openrouter/z-ai/glm-4.5-air:free",
+  "providers": {
+    "longcat": {
+      "name": "longcat",
+      "baseUrl": "https://api.longcat.chat/openai/v1",
+      "api": "openai-completions",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "LongCat-Flash-Thinking-2601",
+          "name": "LongCat-Flash-Thinking-2601",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 8192,
+          "compat": {
+            "maxTokensField": "max_tokens"
+          }
+        }
+      ]
+    },
+    "zai": {
+      "name": "zai",
+      "baseUrl": "https://api.z.ai/api/paas/v4",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "glm-5.1",
+          "name": "GLM-5.1",
+          "reasoning": true,
+          "input": ["text"],
+          "cost": {
+            "input": 1.2,
+            "output": 4,
+            "cacheRead": 0.24,
+            "cacheWrite": 0
+          },
+          "contextWindow": 202800,
+          "maxTokens": 131100
+        },
+        {
+          "id": "glm-5",
+          "name": "GLM-5",
+          "reasoning": true,
+          "input": ["text"],
+          "cost": {
+            "input": 1,
+            "output": 3.2,
+            "cacheRead": 0.2,
+            "cacheWrite": 0
+          },
+          "contextWindow": 202800,
+          "maxTokens": 131100
+        },
+        {
+          "id": "glm-4.5-Air",
+          "name": "GLM-4.5-Air",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": {
+            "input": 1.2,
+            "output": 4,
+            "cacheRead": 0.24,
+            "cacheWrite": 0
+          },
+          "contextWindow": 202800,
+          "maxTokens": 131100
+        }
+      ]
+    },
+    "openrouter": {
+      "name": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "api": "openai-completions",
+      "authHeader": true,
+      "models": [
+        {
+          "id": "z-ai/glm-4.5-air:free",
+          "name": "GLM-4.5-Air",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 202800,
+          "maxTokens": 131100,
+          "compat": {
+            "maxTokensField": "max_tokens"
+          }
+        },
+        {
+          "id": "minimax/minimax-m2.5",
+          "name": "MiniMax M2.5",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 32000,
+          "compat": {
+            "maxTokensField": "max_tokens"
+          }
+        },
+        {
+          "id": "xiaomi/mimo-v2-pro",
+          "name": "Xiaomi MiMo V2 Pro",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 16384,
+          "compat": {
+            "maxTokensField": "max_tokens"
+          }
+        },
+        {
+          "id": "z-ai/glm-5.1",
+          "name": "Z-AI GLM-5.1",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 202800,
+          "maxTokens": 131100,
+          "compat": {
+            "maxTokensField": "max_tokens"
+          }
+        }
+      ]
+    }
+  }
+}
