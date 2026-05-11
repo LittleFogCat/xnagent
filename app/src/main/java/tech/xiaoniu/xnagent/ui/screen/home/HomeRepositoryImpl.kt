@@ -4,16 +4,17 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import tech.xiaoniu.xnagent.common.util.currentTimeF
 import tech.xiaoniu.xnagent.data.ModelConfig
 import tech.xiaoniu.xnagent.data.local.entity.Session
-import tech.xiaoniu.xnagent.data.local.network.NetworkConfig
 import tech.xiaoniu.xnagent.data.remote.api.ChatApi
 import tech.xiaoniu.xnagent.data.remote.api.StreamChatApi
 import tech.xiaoniu.xnagent.data.remote.dto.AgentsResponse
@@ -24,13 +25,10 @@ import tech.xiaoniu.xnagent.data.remote.dto.CreateChatRequest
 import tech.xiaoniu.xnagent.data.remote.dto.CurrentChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.DeleteChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ModelsResponse
+import tech.xiaoniu.xnagent.data.remote.dto.SseChunk
 import tech.xiaoniu.xnagent.data.remote.dto.UpdateChatRequest
 import tech.xiaoniu.xnagent.ui.model.SendToLLMResult
 import javax.inject.Inject
-import javax.inject.Named
-
-@Serializable
-private data class SseFrame(val content: String)
 
 /**
  * @author littlefogcat
@@ -70,18 +68,40 @@ class HomeRepositoryImpl @Inject constructor(
             return@flow
         }
         try {
-            val source = responseBody.source()
-            while (!source.exhausted()) {
-                val line = source.readUtf8Line() ?: continue
-                if (!line.startsWith("data: ")) continue
-                val data = line.removePrefix("data: ")
-                if (data == "[DONE]") break
-                runCatching {
-                    json.decodeFromString(SseFrame.serializer(), data).content
-                }.onSuccess { content ->
-                    emit(SendToLLMResult.Streaming(content))
+            responseBody.byteStream()
+                .bufferedReader()
+                .use {
+                    var line: String? = null
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        line = it.readLine()
+                        if (line.isBlank()) continue
+
+                        when {
+                            line.startsWith(":") -> {
+                                Log.d(TAG, "Received SSE comment: $line")
+                                // do nothing
+                            }
+
+                            line.trim() == "data: [DONE]" -> {
+                                Log.d(TAG, "Stream completed")
+                                break
+                            }
+
+                            line.startsWith("data: ") -> {
+                                val data = line.substring("data: ".length)
+                                Log.d(TAG, "sendToLLM: ${currentTimeF()} received chunk: $data")
+                                runCatching {
+                                    json.decodeFromString(SseChunk.serializer(), data).content
+                                }.onSuccess { content ->
+                                    emit(SendToLLMResult.Streaming(content))
+                                }.onFailure { e ->
+                                    Log.w(TAG, "sendToLLM: parse chunk failed", e)
+                                }
+                            }
+                        }
+                    }
                 }
-            }
         } catch (e: Exception) {
             Log.w(TAG, "sendToLLM: read response failed", e)
             emit(SendToLLMResult.Error(e))

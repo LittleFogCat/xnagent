@@ -23,7 +23,8 @@ data class ChatRequest(
     val chatTarget: ChatTargetDto? = null,
     @SerialName("max_tokens") val maxTokens: Long? = null,
     val temperature: Double? = null,
-    @SerialName("top_p") val topP: Double? = null
+    @SerialName("top_p") val topP: Double? = null,
+    val streaming: Boolean = true
 )
 
 @Serializable
@@ -113,3 +114,6 @@ data class DeleteChatResponse(
     val success: Boolean
 )
 
+/** SSE 数据块 **/
+@Serializable
+data class SseChunk(val content: String)

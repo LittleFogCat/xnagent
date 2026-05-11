@@ -102,16 +102,16 @@ class NetworkModule {
     @Named("sse")
     fun provideSSERetrofit(
         json: Json,
-        okhttp: OkHttpClient
     ): retrofit2.Retrofit {
+        // 不能复用 provideOkHttpClient，其 HttpLoggingInterceptor(Level.BODY)
+        // 会 source.request(Long.MAX_VALUE) 把整个响应体缓冲到内存，破坏 SSE 流式读取
+        val sseClient = OkHttpClient.Builder()
+            .connectTimeout(0, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
+            .build()
         return retrofit2.Retrofit.Builder()
             .baseUrl(NetworkConfig.BASE_URL)
-            .client(
-                okhttp.newBuilder()
-                    .connectTimeout(0, TimeUnit.SECONDS)
-                    .readTimeout(0, TimeUnit.SECONDS)
-                    .build()
-            )
+            .client(sseClient)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
     }
