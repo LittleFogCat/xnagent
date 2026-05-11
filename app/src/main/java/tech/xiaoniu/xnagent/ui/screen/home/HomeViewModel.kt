@@ -1,5 +1,6 @@
 package tech.xiaoniu.xnagent.ui.screen.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -7,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import tech.xiaoniu.xnagent.data.local.entity.Session
+import tech.xiaoniu.xnagent.data.remote.dto.ChatRequest
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.HomeUiState
 import tech.xiaoniu.xnagent.ui.model.MessageRole
@@ -22,9 +25,12 @@ import java.util.UUID
 class HomeViewModel @Inject constructor(
     private val homeRepository: HomeRepository
 ) : ViewModel() {
+    private val TAG = javaClass.simpleName
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: Flow<HomeUiState> = _uiState
+
+    val sessions: Flow<List<Session>> = homeRepository.sessions
 
     fun dispatch(intent: HomeIntent) {
         when (intent) {
@@ -58,43 +64,70 @@ class HomeViewModel @Inject constructor(
             HomeIntent.SendMessage -> {
                 val text = _uiState.value.inputText.trim()
                 if (text.isEmpty()) return
+                val currentModel = _uiState.value.currentModel ?: return
 
-                val newMessage = ChatMessage(
+                val userMessage = ChatMessage(
                     id = UUID.randomUUID().toString(),
                     role = MessageRole.USER,
                     content = text
                 )
 
+                // 构建请求消息列表：已有消息 + 新用户消息
+                val allMessages = _uiState.value.messages + userMessage
+
                 _uiState.value = _uiState.value.copy(
-                    messages = _uiState.value.messages + newMessage,
+                    messages = allMessages,
                     inputText = ""
                 )
 
+                val request = ChatRequest(
+                    model = currentModel.fullId,
+                    messages = allMessages.map { it.toChatMessageDto() }
+                )
+
                 viewModelScope.launch {
-                    homeRepository.sendToLLM(newMessage.toLLMMessage()).collect {
-                        when (it) {
-                            is SendToLLMResult.Success -> {
-                                val response = it.response
-                                val newMessage = ChatMessage(
-                                    id = UUID.randomUUID().toString(),
-                                    role = MessageRole.ASSISTANT,
-                                    content = response
-                                )
-                                _uiState.value = _uiState.value.copy(
-                                    messages = _uiState.value.messages + newMessage
-                                )
+                    var assistantMessageId: String? = null
+                    var accumulatedContent = ""
+
+                    homeRepository.sendToLLM(request).collect { result ->
+                        when (result) {
+                            is SendToLLMResult.Streaming -> {
+                                accumulatedContent += result.content
+                                val currentMessages = _uiState.value.messages.toMutableList()
+                                if (assistantMessageId == null) {
+                                    assistantMessageId = UUID.randomUUID().toString()
+                                    currentMessages.add(
+                                        ChatMessage(
+                                            id = assistantMessageId,
+                                            role = MessageRole.ASSISTANT,
+                                            content = accumulatedContent
+                                        )
+                                    )
+                                } else {
+                                    val index = currentMessages.indexOfFirst { it.id == assistantMessageId }
+                                    if (index >= 0) {
+                                        currentMessages[index] = currentMessages[index].copy(
+                                            content = accumulatedContent
+                                        )
+                                    }
+                                }
+                                _uiState.value = _uiState.value.copy(messages = currentMessages)
                             }
 
                             is SendToLLMResult.Error -> {
-                                val response = "哎呀，好像出错了！错误信息：${it.error.message}"
-                                val newMessage = ChatMessage(
+                                Log.w(TAG, "dispatch: response error: ${result.error.stackTraceToString()}")
+                                val response = "哎呀，好像出错了！错误信息：${result.error.message}"
+                                val errorMessage = ChatMessage(
                                     id = UUID.randomUUID().toString(),
                                     role = MessageRole.ASSISTANT,
                                     content = response
                                 )
                                 _uiState.value = _uiState.value.copy(
-                                    messages = _uiState.value.messages + newMessage
+                                    messages = _uiState.value.messages + errorMessage
                                 )
+                            }
+
+                            else -> { /* Success 等其余情况，无操作 */
                             }
                         }
                     }

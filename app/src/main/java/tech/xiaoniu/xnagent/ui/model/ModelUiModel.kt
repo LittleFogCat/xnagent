@@ -12,5 +12,6 @@ data class ModelUiModel(
     val name: String,
     val provider: String,
 ) {
+    val fullId : String get() = "$provider/$id"
     val label: String get() = "$provider/$name"
 }

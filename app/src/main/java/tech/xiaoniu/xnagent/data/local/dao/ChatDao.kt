@@ -1,11 +1,11 @@
-package tech.xiaoniu.xnagent.data.dao
+package tech.xiaoniu.xnagent.data.local.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
-import tech.xiaoniu.xnagent.data.entity.ChatMessage
-import tech.xiaoniu.xnagent.data.entity.Session
+import tech.xiaoniu.xnagent.data.local.entity.ChatMessage
+import tech.xiaoniu.xnagent.data.local.entity.Session
 
 /**
  * @author littlefogcat

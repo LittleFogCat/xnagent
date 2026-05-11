@@ -1,6 +1,7 @@
 package tech.xiaoniu.xnagent.ui.model
 
 import tech.xiaoniu.xnagent.data.LLMMessage
+import tech.xiaoniu.xnagent.data.remote.dto.ChatMessageDto
 
 /**
  * Agent 工作模式
@@ -37,7 +38,18 @@ data class ChatMessage(
     val role: MessageRole,
     val content: String,
     val timestamp: Long = System.currentTimeMillis()
-)
+) {
+    fun toChatMessageDto(): ChatMessageDto {
+        return ChatMessageDto(
+            role = when (role) {
+                MessageRole.SYSTEM -> "system"
+                MessageRole.USER -> "user"
+                MessageRole.ASSISTANT -> "assistant"
+            },
+            content = content
+        )
+    }
+}
 
 fun ChatMessage.toLLMMessage(): LLMMessage {
     return LLMMessage(

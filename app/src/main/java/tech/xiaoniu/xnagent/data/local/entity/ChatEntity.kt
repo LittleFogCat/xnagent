@@ -1,4 +1,4 @@
-package tech.xiaoniu.xnagent.data.entity
+package tech.xiaoniu.xnagent.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
