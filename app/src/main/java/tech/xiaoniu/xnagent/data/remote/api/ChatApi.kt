@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
 
 /** Retrofit interface for chat endpoints */
 interface ChatApi {
-    /** SSE-style chat endpoint — caller handles the response body stream */
+
     @POST("/api/chat")
     suspend fun chat(@Body request: ChatRequest): ResponseBody
 

@@ -16,6 +16,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import tech.xiaoniu.xnagent.data.local.network.NetworkConfig
+import tech.xiaoniu.xnagent.data.mock.ChatApiMock
 import tech.xiaoniu.xnagent.data.remote.api.ChatApi
 import tech.xiaoniu.xnagent.data.remote.api.StreamChatApi
 import tech.xiaoniu.xnagent.ui.screen.home.HomeRepository
@@ -115,7 +116,11 @@ class NetworkModule {
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
     }
+}
 
+@Module
+@InstallIn(SingletonComponent::class)
+class DataModule {
     @Provides
     @Singleton
     fun provideChatApi(retrofit: retrofit2.Retrofit): ChatApi =
@@ -125,5 +130,4 @@ class NetworkModule {
     @Singleton
     fun provideStreamChatApi(@Named("sse") retrofit: retrofit2.Retrofit): StreamChatApi =
         retrofit.create(StreamChatApi::class.java)
-
 }

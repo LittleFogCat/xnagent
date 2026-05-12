@@ -1,32 +1,44 @@
 package tech.xiaoniu.xnagent.ui.screen.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material3.DismissibleNavigationDrawer
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,14 +49,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.R
 import tech.xiaoniu.xnagent.ui.component.ChatMessageList
 import tech.xiaoniu.xnagent.ui.component.DropdownSelector
 import tech.xiaoniu.xnagent.ui.model.AgentMode
-import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.HomeUiState
-import tech.xiaoniu.xnagent.ui.model.MessageRole
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
+import tech.xiaoniu.xnagent.ui.model.SessionUiModel
+import tech.xiaoniu.xnagent.ui.model.groupByDate
 
 
 /**
@@ -92,6 +105,7 @@ fun HomeScreenContent(
     modifier: Modifier = Modifier,
     uiState: HomeUiState = HomeUiState(),
     onAction: (HomeIntent) -> Unit = {},
+    initialDrawerValue: DrawerValue = DrawerValue.Closed,
     keyboardController: SoftwareKeyboardController? = null
 //    agentMode: AgentMode,
 //    inputText: String,
@@ -103,139 +117,214 @@ fun HomeScreenContent(
 //    onInputChange: (String) -> Unit,
 //    onSend: () -> Unit,
 ) {
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            // 顶栏
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            {
+    val drawerState = rememberDrawerState(initialDrawerValue)
+    val scope = rememberCoroutineScope()
 
-                            },
-                            shape = CircleShape,
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = Color.White
-                            ),
-                            modifier = Modifier
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = true,
+        drawerContent = {
+            DrawerContent(modifier, uiState.sessions)
+        }
+    ) {
+        Scaffold(
+            modifier = modifier.fillMaxSize(),
+            topBar = {
+                // 顶栏
+                TopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_action_menu),
-                                contentDescription = "Menu",
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .padding(6.dp)
-                            )
-                        }
-                        Column {
-                            Text(
-                                text = "XN",
-                                style = MaterialTheme.typography.bodyLarge
-                                    .copy(fontWeight = FontWeight.Bold)
-                            )
-                            DropdownSelector(
-                                items = uiState.availableModels,
-                                onItemSelect = { onAction(HomeIntent.SelectModel(it)) },
-                                itemToText = { label },
-                                border = false,
-                                contentPadding = PaddingValues(),
-                                modifier = Modifier
-                                    .size(140.dp, 30.dp)
+                            IconButton(
+                                {
+                                    scope.launch {
+                                        if (drawerState.isClosed) {
+                                            drawerState.open()
+                                        } else {
+                                            drawerState.close()
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.White
+                                ),
                             ) {
-                                Text(
-                                    text = uiState.currentModel?.label ?: "",
-                                    maxLines = 1,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.fillMaxWidth()
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_action_menu),
+                                    contentDescription = "Menu",
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .padding(6.dp)
                                 )
                             }
+                            Column {
+                                Text(
+                                    text = "XN",
+                                    style = MaterialTheme.typography.bodyLarge
+                                        .copy(fontWeight = FontWeight.Bold)
+                                )
+                                DropdownSelector(
+                                    items = uiState.availableModels,
+                                    onItemSelect = { onAction(HomeIntent.SelectModel(it)) },
+                                    itemToText = { label },
+                                    border = false,
+                                    contentPadding = PaddingValues(),
+                                    modifier = Modifier
+                                        .size(140.dp, 30.dp)
+                                ) {
+                                    Text(
+                                        text = uiState.currentModel?.label ?: "",
+                                        maxLines = 1,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
                         }
-                    }
-                },
-                actions = {
-                    DropdownSelector(
-                        items = AgentMode.entries.toList(),
-                        onItemSelect = { onAction(HomeIntent.SetAgentMode(it)) },
-                        itemToText = { name },
-                        modifier = Modifier.size(120.dp, 40.dp)
-                    ) {
-                        Text(
-                            uiState.agentMode.name,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .imePadding()
-        ) {
-            // 聊天消息区
-            ChatMessageList(
-                messages = uiState.messages,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            )
-
-            // 底部输入栏
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = uiState.inputText,
-                    onValueChange = { onAction(HomeIntent.UpdateInput(it)) },
-                    placeholder = {
-                        Text(
-                            text = "输入消息…",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
                     },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        focusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    actions = {
+                        DropdownSelector(
+                            items = AgentMode.entries.toList(),
+                            onItemSelect = { onAction(HomeIntent.SetAgentMode(it)) },
+                            itemToText = { name },
+                            modifier = Modifier.size(120.dp, 40.dp)
+                        ) {
+                            Text(
+                                uiState.agentMode.name,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
                     ),
-                    maxLines = 5,
+                )
+            }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .imePadding()
+            ) {
+                // 聊天消息区
+                ChatMessageList(
+                    messages = uiState.messages,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 8.dp)
+                        .fillMaxWidth()
                 )
 
-                IconButton(
-                    onClick = {
-                        if (uiState.inputText.isNotBlank()) {
-                            onAction(HomeIntent.SendMessage)
-                            keyboardController?.hide()
-                        }
-                    },
-                    enabled = uiState.inputText.isNotBlank(),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // 底部输入栏
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "发送",
-                        modifier = Modifier.padding(2.dp)
+                    OutlinedTextField(
+                        value = uiState.inputText,
+                        onValueChange = { onAction(HomeIntent.UpdateInput(it)) },
+                        placeholder = {
+                            Text(
+                                text = "输入消息…",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        },
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        maxLines = 5,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    )
+
+                    IconButton(
+                        onClick = {
+                            if (uiState.inputText.isNotBlank()) {
+                                onAction(HomeIntent.SendMessage)
+                                keyboardController?.hide()
+                            }
+                        },
+                        enabled = uiState.inputText.isNotBlank(),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "发送",
+                            modifier = Modifier.padding(2.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DrawerContent(
+    modifier: Modifier = Modifier,
+    sessions: List<SessionUiModel>
+) {
+    if (sessions.isEmpty()) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(0.82f)
+                .background(Color.White)
+        ) {
+            Text("暂无会话", style = MaterialTheme.typography.bodyMedium)
+            return
+        }
+    }
+    val sessionGroups = sessions.groupByDate()
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .fillMaxWidth(0.82f)
+            .background(Color.White)
+            .statusBarsPadding(),
+    ) {
+        LazyColumn {
+            sessionGroups.forEach { group ->
+                val groupId = "header_${group.groupTitle}"
+                // 会话组标题（日期）
+                item(key = groupId) {
+                    Text(
+                        text = group.groupTitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+                // 组内会话标题
+                items(
+                    count = group.sessions.size,
+                    key = {
+                        "session_${group.sessions[it].id}"
+                    },
+                ) { i ->
+                    Text(
+                        text = group.sessions[i].title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 8.dp)
                     )
                 }
             }
@@ -269,8 +358,18 @@ fun HomeScreenPreview() {
                 ModelUiModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "OpenAI"),
                 ModelUiModel("gpt-4", "GPT-4", "OpenAI"),
                 ModelUiModel("custom-agent", "自定义 Agent", "本地部署")
-            )
-        )
+            ),
+            sessions = System.currentTimeMillis().let { now ->
+                listOf(
+                    SessionUiModel("1", "会话 1", now),
+                    SessionUiModel("2", "会话 2", now - 3600_000),
+                    SessionUiModel("3", "会话 3", now - 7200_000),
+                    SessionUiModel("3", "会话 3", now - 72000_000),
+                    SessionUiModel("3", "会话 3", now - 122000_000),
+                )
+            }
+        ),
+        initialDrawerValue = DrawerValue.Open
     )
 }
 

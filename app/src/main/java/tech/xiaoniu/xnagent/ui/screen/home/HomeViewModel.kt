@@ -17,6 +17,7 @@ import tech.xiaoniu.xnagent.ui.model.HomeUiState
 import tech.xiaoniu.xnagent.ui.model.MessageRole
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
 import tech.xiaoniu.xnagent.ui.model.SendToLLMResult
+import tech.xiaoniu.xnagent.ui.model.SessionUiModel
 import tech.xiaoniu.xnagent.ui.model.toLLMMessage
 import java.util.UUID
 
@@ -52,6 +53,15 @@ class HomeViewModel @Inject constructor(
                             availableModels = modelUiModels,
                             currentModel = defaultModel
                         )
+                    }
+                    homeRepository.getChats().collect { chats ->
+                        _uiState.value = _uiState.value.copy(sessions = chats.chats.map {
+                            SessionUiModel(
+                                id = it.id,
+                                title = it.title,
+                                lastMessageTime = it.updatedAt ?: System.currentTimeMillis()
+                            )
+                        })
                     }
                 }
             }
