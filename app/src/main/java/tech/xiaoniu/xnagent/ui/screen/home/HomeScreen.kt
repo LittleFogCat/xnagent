@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,11 +13,13 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material3.DismissibleNavigationDrawer
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -24,26 +27,24 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -128,7 +129,9 @@ fun HomeScreenContent(
         }
     ) {
         Scaffold(
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier
+                .fillMaxSize()
+                .imePadding(),
             topBar = {
                 // 顶栏
                 TopAppBar(
@@ -146,19 +149,21 @@ fun HomeScreenContent(
                                         }
                                     }
                                 },
-                                shape = RoundedCornerShape(8.dp),
                                 colors = IconButtonDefaults.iconButtonColors(
-                                    containerColor = Color.White
+                                    containerColor = Color.Transparent
                                 ),
+                                modifier = Modifier.padding(0.dp)
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_action_menu),
                                     contentDescription = "Menu",
                                     modifier = Modifier
                                         .size(40.dp)
+                                        .background(Color.Transparent)
                                         .padding(6.dp)
                                 )
                             }
+                            Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
                                     text = "XN",
@@ -198,7 +203,7 @@ fun HomeScreenContent(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = Color.White
                     ),
                 )
             }
@@ -207,7 +212,7 @@ fun HomeScreenContent(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
-                    .imePadding()
+                    .background(Color.White)
             ) {
                 // 聊天消息区
                 ChatMessageList(
@@ -218,54 +223,56 @@ fun HomeScreenContent(
                 )
 
                 // 底部输入栏
-                Row(
+                Card(
+                    elevation = CardDefaults.cardElevation(4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(Color.White),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(12.dp, 6.dp)
+                        .background(Color.White)
                 ) {
-                    OutlinedTextField(
-                        value = uiState.inputText,
-                        onValueChange = { onAction(HomeIntent.UpdateInput(it)) },
-                        placeholder = {
-                            Text(
-                                text = "输入消息…",
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        },
-                        shape = RoundedCornerShape(24.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            focusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                        ),
-                        maxLines = 5,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                    )
-
-                    IconButton(
-                        onClick = {
-                            if (uiState.inputText.isNotBlank()) {
-                                onAction(HomeIntent.SendMessage)
-                                keyboardController?.hide()
-                            }
-                        },
-                        enabled = uiState.inputText.isNotBlank(),
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "发送",
-                            modifier = Modifier.padding(2.dp)
+                        TextField(
+                            value = uiState.inputText,
+                            onValueChange = { onAction(HomeIntent.UpdateInput(it)) },
+                            placeholder = {
+                                Text(
+                                    text = "输入消息…",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = TextFieldDefaults.colors(
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent
+                            ),
+                            maxLines = 5,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
                         )
+
+                        IconButton(
+                            onClick = {
+                                if (uiState.inputText.isNotBlank()) {
+                                    onAction(HomeIntent.SendMessage)
+                                    keyboardController?.hide()
+                                }
+                            },
+                            enabled = uiState.inputText.isNotBlank()
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "发送",
+                                modifier = Modifier.padding(2.dp),
+                                tint = colorResource(R.color.chat_send_button_bg)
+                            )
+                        }
                     }
                 }
             }
@@ -364,12 +371,12 @@ fun HomeScreenPreview() {
                     SessionUiModel("1", "会话 1", now),
                     SessionUiModel("2", "会话 2", now - 3600_000),
                     SessionUiModel("3", "会话 3", now - 7200_000),
-                    SessionUiModel("3", "会话 3", now - 72000_000),
-                    SessionUiModel("3", "会话 3", now - 122000_000),
+                    SessionUiModel("4", "会话 4", now - 72000_000),
+                    SessionUiModel("5", "会话 5", now - 122000_000),
                 )
             }
         ),
-        initialDrawerValue = DrawerValue.Open
+        initialDrawerValue = DrawerValue.Closed
     )
 }
 

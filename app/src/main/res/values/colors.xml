@@ -7,4 +7,8 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <color name="chat_bubble_bg_user">#E8F0FD</color>
+    <color name="chat_bubble_bg_assist">#F4F4F4</color>
+    <color name="chat_send_button_bg">#3B75FA</color>
 </resources>

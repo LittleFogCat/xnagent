@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.common.util.currentTimeF
@@ -39,7 +40,9 @@ class HomeViewModel @Inject constructor(
         when (intent) {
             HomeIntent.Initialize -> {
                 viewModelScope.launch {
-                    homeRepository.getModels().collect { response ->
+                    homeRepository.getModels().catch {
+                        Log.w(TAG, "dispatch: getModels error: ${it.stackTraceToString()}")
+                    }.collect { response ->
                         val modelUiModels = response.models.map { model ->
                             ModelUiModel(model.id, model.name, model.provider)
                         }
@@ -54,7 +57,9 @@ class HomeViewModel @Inject constructor(
                             currentModel = defaultModel
                         )
                     }
-                    homeRepository.getChats().collect { chats ->
+                    homeRepository.getChats().catch {
+                        Log.w(TAG, "dispatch: getChats error: ${it.stackTraceToString()}")
+                    }.collect { chats ->
                         _uiState.value = _uiState.value.copy(sessions = chats.chats.map {
                             SessionUiModel(
                                 id = it.id,
