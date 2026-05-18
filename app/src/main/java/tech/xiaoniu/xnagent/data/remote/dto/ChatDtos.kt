@@ -1,7 +1,10 @@
 package tech.xiaoniu.xnagent.data.remote.dto
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import tech.xiaoniu.xnagent.data.remote.dto.ThinkingConfig.Type
 
 /** 请求用的消息 DTO */
 @Serializable
@@ -17,15 +20,29 @@ data class ChatTargetDto(
 )
 
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 data class ChatRequest(
     val model: String,
     val messages: List<ChatMessageDto>,
     val chatTarget: ChatTargetDto? = null,
     @SerialName("max_tokens") val maxTokens: Long? = null,
     val temperature: Double? = null,
+    val thinking: ThinkingConfig? = ThinkingConfig(Type.ENABLED),
     @SerialName("top_p") val topP: Double? = null,
     val streaming: Boolean = true
 )
+
+@Serializable
+data class ThinkingConfig(val type: Type) {
+
+    enum class Type {
+        @SerialName("enabled")
+        ENABLED,
+
+        @SerialName("disabled")
+        DISABLED;
+    }
+}
 
 @Serializable
 data class ModelInfoDto(
@@ -116,4 +133,8 @@ data class DeleteChatResponse(
 
 /** SSE 数据块 **/
 @Serializable
-data class SseChunk(val content: String)
+data class SseChunk(
+    val content: String? = null,
+    @SerialName("reasoning_content")
+    val reasoningContent: String? = null,
+)

@@ -37,6 +37,9 @@ data class ChatMessage(
     val id: String,
     val role: MessageRole,
     val content: String,
+    val reasoningContent: String = "",
+    val reasoningDurationMs: Long? = null,
+    val isThinking: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 ) {
     fun toChatMessageDto(): ChatMessageDto {

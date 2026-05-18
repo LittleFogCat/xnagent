@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.common.util.currentTimeF
 import tech.xiaoniu.xnagent.data.local.entity.Session
@@ -19,7 +18,6 @@ import tech.xiaoniu.xnagent.ui.model.MessageRole
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
 import tech.xiaoniu.xnagent.ui.model.SendToLLMResult
 import tech.xiaoniu.xnagent.ui.model.SessionUiModel
-import tech.xiaoniu.xnagent.ui.model.toLLMMessage
 import java.util.UUID
 
 /**
@@ -127,50 +125,82 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             var assistantMessageId: String? = null
             var accumulatedContent = ""
+            var accumulatedReasoning = ""
+            var thinkingStartedAtMs: Long? = null
+            var isThinking = false
+
+            fun buildAssistantMessage(): ChatMessage {
+                val thinkingDurationMs = thinkingStartedAtMs?.let { startedAt ->
+                    if (accumulatedReasoning.isBlank()) {
+                        null
+                    } else {
+                        (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
+                    }
+                }
+
+                return ChatMessage(
+                    id = assistantMessageId ?: UUID.randomUUID().toString(),
+                    role = MessageRole.ASSISTANT,
+                    content = accumulatedContent,
+                    reasoningContent = accumulatedReasoning,
+                    reasoningDurationMs = if (accumulatedReasoning.isBlank()) null else thinkingDurationMs,
+                    isThinking = isThinking
+                )
+            }
+
+            fun upsertAssistantMessage() {
+                val currentMessages = _uiState.value.messages.toMutableList()
+                if (assistantMessageId == null) {
+                    assistantMessageId = UUID.randomUUID().toString()
+                }
+
+                val assistantMessage = buildAssistantMessage().copy(id = assistantMessageId!!)
+                val index = currentMessages.indexOfFirst { it.id == assistantMessageId }
+                if (index >= 0) {
+                    currentMessages[index] = assistantMessage
+                } else {
+                    currentMessages.add(assistantMessage)
+                }
+                _uiState.value = _uiState.value.copy(messages = currentMessages)
+            }
 
             homeRepository.sendToLLM(request).collect { result ->
                 when (result) {
+                    is SendToLLMResult.Thinking -> {
+                        Log.d(TAG, "sendToLLM: ${currentTimeF()} thinking...: ${result.content}")
+                        if (thinkingStartedAtMs == null) {
+                            thinkingStartedAtMs = System.currentTimeMillis()
+                        }
+                        isThinking = true
+                        accumulatedReasoning += result.content
+                        upsertAssistantMessage()
+                    }
+
                     is SendToLLMResult.Streaming -> {
                         accumulatedContent += result.content
+                        isThinking = false
                         Log.e(TAG, "sendToLLM: ${currentTimeF()} streaming...: ${result.content}")
-                        val currentMessages = _uiState.value.messages.toMutableList()
-                        if (assistantMessageId == null) {
-                            assistantMessageId = UUID.randomUUID().toString()
-                            currentMessages.add(
-                                ChatMessage(
-                                    id = assistantMessageId,
-                                    role = MessageRole.ASSISTANT,
-                                    content = accumulatedContent
-                                )
-                            )
-                        } else {
-                            val index = currentMessages.indexOfFirst { it.id == assistantMessageId }
-                            if (index >= 0) {
-                                currentMessages[index] = currentMessages[index].copy(
-                                    content = accumulatedContent
-                                )
-                            }
-                        }
-                        _uiState.value = _uiState.value.copy(messages = currentMessages)
+                        upsertAssistantMessage()
                     }
 
                     is SendToLLMResult.Error -> {
                         Log.w(TAG, "sendToLLM: response error: ${result.error.stackTraceToString()}")
                         val response = "哎呀，好像出错了！错误信息：${result.error.message}"
-                        val errorMessage = ChatMessage(
-                            id = UUID.randomUUID().toString(),
-                            role = MessageRole.ASSISTANT,
-                            content = response
-                        )
-                        _uiState.value = _uiState.value.copy(
-                            messages = _uiState.value.messages + errorMessage
-                        )
+                        accumulatedContent = response
+                        isThinking = false
+                        upsertAssistantMessage()
                     }
 
                     is SendToLLMResult.Success -> {
+                        isThinking = false
                         Log.i(TAG, "sendToLLM: onSuccess")
                     }
                 }
+            }
+
+            if (assistantMessageId != null && accumulatedReasoning.isNotBlank() && isThinking) {
+                isThinking = false
+                upsertAssistantMessage()
             }
         }
     }

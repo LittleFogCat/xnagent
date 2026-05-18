@@ -60,6 +60,7 @@ class HomeRepositoryImpl @Inject constructor(
     // ---- SSE 流式聊天 ----
 
     override fun sendToLLM(request: ChatRequest): Flow<SendToLLMResult> = flow {
+        Log.i(TAG, "sendToLLM: ${json.encodeToString(ChatRequest.serializer(), request)}")
         val responseBody = try {
             streamChatApi.chat(request)
         } catch (e: Exception) {
@@ -92,9 +93,16 @@ class HomeRepositoryImpl @Inject constructor(
                                 val data = line.substring("data: ".length)
                                 Log.d(TAG, "sendToLLM: ${currentTimeF()} received chunk: $data")
                                 runCatching {
-                                    json.decodeFromString(SseChunk.serializer(), data).content
-                                }.onSuccess { content ->
-                                    emit(SendToLLMResult.Streaming(content))
+                                    val chunk = json.decodeFromString(SseChunk.serializer(), data)
+                                    chunk
+                                }.onSuccess { chunk ->
+                                    if (chunk.reasoningContent != null) {
+                                        emit(SendToLLMResult.Thinking(chunk.reasoningContent))
+                                    } else if (chunk.content != null) {
+                                        emit(SendToLLMResult.Streaming(chunk.content))
+                                    } else {
+                                        Log.w(TAG, "sendToLLM: Invalid chunk received: $data")
+                                    }
                                 }.onFailure { e ->
                                     Log.w(TAG, "sendToLLM: parse chunk failed", e)
                                 }

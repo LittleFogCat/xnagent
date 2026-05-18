@@ -1,6 +1,7 @@
 package tech.xiaoniu.xnagent.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -54,6 +56,8 @@ fun ChatMessageItem(
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.USER
+    var reasoningExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    val shouldShowReasoning = message.isThinking || reasoningExpanded
 
     Row(
         modifier = modifier
@@ -99,12 +103,38 @@ fun ChatMessageItem(
                         )
                     ),
             ) {
-                Text(
-                    text = message.content,
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.Black
-                )
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    if (!isUser && message.reasoningContent.isNotBlank()) {
+                        ReasoningSection(
+                            message = message,
+                            expanded = reasoningExpanded,
+                            showReasoning = shouldShowReasoning,
+                            onToggleExpanded = { reasoningExpanded = !reasoningExpanded }
+                        )
+
+                        if (message.content.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+
+                    if (message.content.isNotBlank()) {
+                        if (isUser) {
+                            Text(
+                                text = message.content,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.Black
+                            )
+                        } else {
+                            MarkdownText(
+                                text = message.content,
+                                modifier = Modifier.fillMaxWidth(),
+                                textColor = Color.Black
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -112,6 +142,48 @@ fun ChatMessageItem(
             Spacer(modifier = Modifier.size(8.dp))
         }
     }
+}
+
+@Composable
+private fun ReasoningSection(
+    message: ChatMessage,
+    expanded: Boolean,
+    showReasoning: Boolean,
+    onToggleExpanded: () -> Unit
+) {
+    val summaryColor = Color.Black.copy(alpha = 0.62f)
+    val reasoningColor = Color.Black.copy(alpha = 0.54f)
+
+    if (message.isThinking) {
+        Text(
+            text = "思考中...",
+            style = MaterialTheme.typography.bodySmall,
+            color = summaryColor
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+    } else {
+        Text(
+            text = buildReasoningSummary(message.reasoningDurationMs, expanded),
+            modifier = Modifier.clickable(onClick = onToggleExpanded),
+            style = MaterialTheme.typography.bodySmall,
+            color = summaryColor
+        )
+    }
+
+    if (showReasoning) {
+        Text(
+            text = message.reasoningContent,
+            style = MaterialTheme.typography.bodyMedium,
+            color = reasoningColor
+        )
+    }
+}
+
+private fun buildReasoningSummary(reasoningDurationMs: Long?, expanded: Boolean): String {
+    val suffix = if (expanded) "v" else ">"
+    val seconds = ((reasoningDurationMs ?: 0L) + 999L) / 1000L
+    val displaySeconds = if (seconds <= 0L) 1L else seconds
+    return "已思考（用时 ${displaySeconds} 秒）$suffix"
 }
 
 /**
@@ -187,7 +259,7 @@ fun ChatMessageList(
     }
 
     val lastMessage = messages.lastOrNull()
-    LaunchedEffect(lastMessage?.id, lastMessage?.content, shouldFollowBottom) {
+    LaunchedEffect(lastMessage?.id, lastMessage?.content, lastMessage?.reasoningContent, lastMessage?.isThinking, shouldFollowBottom) {
         if (lastMessage == null) {
             previousLastMessageId = null
             return@LaunchedEffect

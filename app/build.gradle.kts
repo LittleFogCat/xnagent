@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.hilt.lifecycle.viewModelCompose)
+    implementation(libs.markwon.core)
 
     implementation(libs.room)
     implementation(libs.room.ktx)

@@ -15,8 +15,8 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import tech.xiaoniu.xnagent.data.local.network.HttpStreamingLoggingInterceptor
 import tech.xiaoniu.xnagent.data.local.network.NetworkConfig
-import tech.xiaoniu.xnagent.data.mock.ChatApiMock
 import tech.xiaoniu.xnagent.data.remote.api.ChatApi
 import tech.xiaoniu.xnagent.data.remote.api.StreamChatApi
 import tech.xiaoniu.xnagent.ui.screen.home.HomeRepository
@@ -58,6 +58,7 @@ class AppModule {
     @Singleton
     fun provideJson(): Json = Json {
         ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
     @Provides
@@ -109,6 +110,9 @@ class NetworkModule {
         val sseClient = OkHttpClient.Builder()
             .connectTimeout(0, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
+            .addInterceptor(HttpStreamingLoggingInterceptor().apply {
+                level = HttpStreamingLoggingInterceptor.Level.BODY
+            })
             .build()
         return retrofit2.Retrofit.Builder()
             .baseUrl(NetworkConfig.BASE_URL)
