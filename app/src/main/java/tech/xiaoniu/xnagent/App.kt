@@ -3,6 +3,7 @@ package tech.xiaoniu.xnagent
 import android.app.Application
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import androidx.room.Room
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
@@ -15,12 +16,18 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import tech.xiaoniu.xnagent.data.repository.AuthRepository
+import tech.xiaoniu.xnagent.data.repository.AuthRepositoryImpl
+import tech.xiaoniu.xnagent.data.local.AuthStore
+import tech.xiaoniu.xnagent.data.local.XNDatabase
+import tech.xiaoniu.xnagent.data.local.dao.ChatDao
 import tech.xiaoniu.xnagent.data.local.network.HttpStreamingLoggingInterceptor
 import tech.xiaoniu.xnagent.data.local.network.NetworkConfig
+import tech.xiaoniu.xnagent.data.remote.api.AuthApi
 import tech.xiaoniu.xnagent.data.remote.api.ChatApi
 import tech.xiaoniu.xnagent.data.remote.api.StreamChatApi
-import tech.xiaoniu.xnagent.ui.screen.home.HomeRepository
-import tech.xiaoniu.xnagent.ui.screen.home.HomeRepositoryImpl
+import tech.xiaoniu.xnagent.data.repository.HomeRepository
+import tech.xiaoniu.xnagent.data.repository.HomeRepositoryImpl
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
@@ -47,12 +54,20 @@ class AppModule {
 
     @Provides
     @Singleton
+    fun provideAuthRepository(
+        authApi: AuthApi,
+        authStore: AuthStore,
+    ): AuthRepository = AuthRepositoryImpl(authApi, authStore)
+
+    @Provides
+    @Singleton
     fun provideHomeRepository(
         @ApplicationContext context: Context,
         json: Json,
         streamChatApi: StreamChatApi,
-        chatApi: ChatApi
-    ): HomeRepository = HomeRepositoryImpl(context, json, streamChatApi, chatApi)
+        chatApi: ChatApi,
+        chatDao: ChatDao,
+    ): HomeRepository = HomeRepositoryImpl(context, json, streamChatApi, chatApi, chatDao)
 
     @Provides
     @Singleton
@@ -75,8 +90,20 @@ class NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
-        appConfig: AppConfig
+        appConfig: AppConfig,
+        authStore: AuthStore,
     ): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val token = authStore.currentToken()
+            val request = if (token.isNullOrBlank()) {
+                chain.request()
+            } else {
+                chain.request().newBuilder()
+                    .header("Authorization", "Bearer $token")
+                    .build()
+            }
+            chain.proceed(request)
+        }
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = if (appConfig.isDebug) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
         })
@@ -104,12 +131,24 @@ class NetworkModule {
     @Named("sse")
     fun provideSSERetrofit(
         json: Json,
+        authStore: AuthStore,
     ): retrofit2.Retrofit {
         // 不能复用 provideOkHttpClient，其 HttpLoggingInterceptor(Level.BODY)
         // 会 source.request(Long.MAX_VALUE) 把整个响应体缓冲到内存，破坏 SSE 流式读取
         val sseClient = OkHttpClient.Builder()
             .connectTimeout(0, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val token = authStore.currentToken()
+                val request = if (token.isNullOrBlank()) {
+                    chain.request()
+                } else {
+                    chain.request().newBuilder()
+                        .header("Authorization", "Bearer $token")
+                        .build()
+                }
+                chain.proceed(request)
+            }
             .addInterceptor(HttpStreamingLoggingInterceptor().apply {
                 level = HttpStreamingLoggingInterceptor.Level.BODY
             })
@@ -125,6 +164,23 @@ class NetworkModule {
 @Module
 @InstallIn(SingletonComponent::class)
 class DataModule {
+    @Provides
+    @Singleton
+    fun provideDatabase(@ApplicationContext context: Context): XNDatabase {
+        return Room.databaseBuilder(context, XNDatabase::class.java, "xnagent.db")
+            .fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideChatDao(database: XNDatabase): ChatDao = database.chatDao()
+
+    @Provides
+    @Singleton
+    fun provideAuthApi(retrofit: retrofit2.Retrofit): AuthApi =
+        retrofit.create(AuthApi::class.java)
+
     @Provides
     @Singleton
     fun provideChatApi(retrofit: retrofit2.Retrofit): ChatApi =

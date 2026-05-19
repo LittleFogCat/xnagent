@@ -11,4 +11,11 @@
     <color name="chat_bubble_bg_user">#E8F0FD</color>
     <color name="chat_bubble_bg_assist">#F4F4F4</color>
     <color name="chat_send_button_bg">#3B75FA</color>
+
+    <color name="deepthink_text_color_checked">#3B75FA</color>
+    <color name="deepthink_text_color_unchecked">#000000</color>
+    <color name="deepthink_border_color_checked">#553B75FA</color>
+    <color name="deepthink_border_color_unchecked">#55000000</color>
+    <color name="deepthink_bg_color_checked">#223B75FA</color>
+    <color name="deepthink_bg_color_unchecked">#00000000</color>
 </resources>

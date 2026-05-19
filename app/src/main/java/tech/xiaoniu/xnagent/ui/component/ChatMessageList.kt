@@ -1,6 +1,9 @@
 package tech.xiaoniu.xnagent.ui.component
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
@@ -11,20 +14,31 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -38,6 +52,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collect
@@ -53,10 +68,20 @@ import tech.xiaoniu.xnagent.ui.model.MessageRole
 @Composable
 fun ChatMessageItem(
     message: ChatMessage,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onEditUserMessage: (String, String) -> Unit = { _, _ -> },
+    onRegenerateAssistantMessage: (String) -> Unit = {},
 ) {
     val isUser = message.role == MessageRole.USER
+    val context = LocalContext.current
+    val clipboardManager = remember(context) {
+        context.getSystemService(ClipboardManager::class.java)
+    }
     var reasoningExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    var showActionDialog by rememberSaveable(message.id) { mutableStateOf(false) }
+    var showSelectionDialog by rememberSaveable("${message.id}_select") { mutableStateOf(false) }
+    var showEditDialog by rememberSaveable("${message.id}_edit") { mutableStateOf(false) }
+    var editDraft by rememberSaveable(message.id, message.content) { mutableStateOf(message.content) }
     val shouldShowReasoning = message.isThinking || reasoningExpanded
 
     Row(
@@ -66,29 +91,33 @@ fun ChatMessageItem(
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top
     ) {
-        if (!isUser) {
-            // 助手头像
-            Surface(
-                modifier = Modifier.size(32.dp),
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SmartToy,
-                    contentDescription = "Assistant",
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .size(24.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            Spacer(modifier = Modifier.size(8.dp))
-        }
+//        if (!isUser) {
+//            // 助手头像
+//            Surface(
+//                modifier = Modifier.size(32.dp),
+//                shape = RoundedCornerShape(8.dp),
+//                color = MaterialTheme.colorScheme.primaryContainer
+//            ) {
+//                Icon(
+//                    imageVector = Icons.Default.SmartToy,
+//                    contentDescription = "Assistant",
+//                    modifier = Modifier
+//                        .padding(4.dp)
+//                        .size(24.dp),
+//                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+//                )
+//            }
+//            Spacer(modifier = Modifier.size(8.dp))
+//        }
 
         BoxWithConstraints {
             Box(
                 modifier = Modifier
                     .widthIn(max = if (isUser) maxWidth * 0.77f else maxWidth)
+                    .combinedClickable(
+                        onClick = { },
+                        onLongClick = { showActionDialog = true }
+                    )
                     .background(
                         color = if (isUser) {
                             colorResource(R.color.chat_bubble_bg_user)
@@ -134,6 +163,47 @@ fun ChatMessageItem(
                             )
                         }
                     }
+
+                    if (!isUser && message.content.isNotBlank() && !message.isThinking) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    clipboardManager?.setPrimaryClip(
+                                        ClipData.newPlainText("message", message.content)
+                                    )
+                                },
+                                modifier = Modifier.size(32.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.Transparent,
+                                    contentColor = Color.Black.copy(alpha = 0.7f),
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    contentDescription = "复制",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            IconButton(
+                                onClick = { onRegenerateAssistantMessage(message.id) },
+                                modifier = Modifier.size(32.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.Transparent,
+                                    contentColor = Color.Black.copy(alpha = 0.7f),
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = "重新生成",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -141,6 +211,123 @@ fun ChatMessageItem(
         if (isUser) {
             Spacer(modifier = Modifier.size(8.dp))
         }
+    }
+
+    if (showActionDialog) {
+        AlertDialog(
+            onDismissRequest = { showActionDialog = false },
+            title = { Text("消息操作") },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = {
+                            clipboardManager?.setPrimaryClip(
+                                ClipData.newPlainText("message", message.content)
+                            )
+                            showActionDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("复制")
+                    }
+                    if (isUser) {
+                        TextButton(
+                            onClick = {
+                                editDraft = message.content
+                                showActionDialog = false
+                                showEditDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("修改并重发")
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            showActionDialog = false
+                            showSelectionDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("选择文字")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showActionDialog = false }) {
+                    Text("关闭")
+                }
+            },
+        )
+    }
+
+    if (showSelectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showSelectionDialog = false },
+            title = { Text("选择文字") },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (isUser) {
+                        SelectionContainer {
+                            Text(
+                                text = message.content,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.Black,
+                            )
+                        }
+                    } else {
+                        MarkdownText(
+                            text = message.content,
+                            modifier = Modifier.fillMaxWidth(),
+                            textColor = Color.Black,
+                            selectable = true,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSelectionDialog = false }) {
+                    Text("关闭")
+                }
+            },
+        )
+    }
+
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("修改消息") },
+            text = {
+                TextField(
+                    value = editDraft,
+                    onValueChange = { editDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 6,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onEditUserMessage(message.id, editDraft)
+                        showEditDialog = false
+                    },
+                    enabled = editDraft.trim().isNotBlank(),
+                ) {
+                    Text("保存并重发")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) {
+                    Text("取消")
+                }
+            },
+        )
     }
 }
 
@@ -192,7 +379,9 @@ private fun buildReasoningSummary(reasoningDurationMs: Long?, expanded: Boolean)
 @Composable
 fun ChatMessageList(
     messages: List<ChatMessage>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onEditUserMessage: (String, String) -> Unit = { _, _ -> },
+    onRegenerateAssistantMessage: (String) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     var shouldFollowBottom by remember { mutableStateOf(true) }
@@ -292,7 +481,11 @@ fun ChatMessageList(
                 items = messages,
                 key = { it.id }
             ) { message ->
-                ChatMessageItem(message = message)
+                ChatMessageItem(
+                    message = message,
+                    onEditUserMessage = onEditUserMessage,
+                    onRegenerateAssistantMessage = onRegenerateAssistantMessage,
+                )
             }
         }
     }

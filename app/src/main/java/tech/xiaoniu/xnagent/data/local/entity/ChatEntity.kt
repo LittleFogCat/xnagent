@@ -9,19 +9,23 @@ import androidx.room.PrimaryKey
  */
 
 /** 一次会话 **/
-@Entity
+@Entity(tableName = "session")
 data class Session(
-    @PrimaryKey(autoGenerate = true) val id: String,
+    @PrimaryKey val id: String,
     val title: String,
-    val createTime: Long
+    val modelId: String,
+    val createTime: Long,
+    val updateTime: Long,
 )
 
 /** 一条聊天记录 **/
 @Entity(tableName = "chat_message")
 data class ChatMessage(
-    @PrimaryKey(autoGenerate = true) val id: String,
+    @PrimaryKey val id: String,
     val sessionId: String,
     val role: String,
     val content: String,
-    val createTime: Long
+    val reasoningContent: String = "",
+    val reasoningDurationMs: Long? = null,
+    val createTime: Long,
 )

@@ -11,14 +11,20 @@ data class HomeUiState(
     val inputText: String = "",
     val messages: List<ChatMessage> = emptyList(),
     val currentModel: ModelUiModel? = null,
+    val currentSessionId: String? = null,
+    val currentSessionModelId: String? = null,
     val availableModels: List<ModelUiModel> = emptyList(),
-    val sessions: List<SessionUiModel> = emptyList()
+    val sessions: List<SessionUiModel> = emptyList(),
+    val isDeepThinkingEnabled: Boolean = false,
+    val isLoggedIn: Boolean = false, // replace isLoggedIn with loggedUser
+    val isGuest: Boolean = false,
 )
 
 data class SessionUiModel(
     val id: String,
     val title: String,
-    val lastMessageTime: Long
+    val lastMessageTime: Long,
+    val selected: Boolean = false,
 )
 
 data class SessionGroup(

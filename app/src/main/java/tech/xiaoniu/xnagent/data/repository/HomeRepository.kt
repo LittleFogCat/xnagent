@@ -1,4 +1,4 @@
-package tech.xiaoniu.xnagent.ui.screen.home
+package tech.xiaoniu.xnagent.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import tech.xiaoniu.xnagent.data.ModelConfig
@@ -12,7 +12,16 @@ import tech.xiaoniu.xnagent.data.remote.dto.CurrentChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.DeleteChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ModelsResponse
 import tech.xiaoniu.xnagent.data.remote.dto.UpdateChatRequest
+import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.SendToLLMResult
+
+data class StoredChat(
+    val sessionId: String,
+    val title: String,
+    val modelId: String,
+    val messages: List<ChatMessage>,
+    val updatedAt: Long,
+)
 
 /**
  * @author littlefogcat
@@ -41,4 +50,17 @@ interface HomeRepository {
     fun updateChat(id: String, request: UpdateChatRequest): Flow<ChatResponse>
 
     fun deleteChat(id: String): Flow<DeleteChatResponse>
+
+    suspend fun loadCurrentStoredChat(useRemote: Boolean): StoredChat?
+
+    suspend fun loadStoredChat(sessionId: String, useRemote: Boolean): StoredChat?
+
+    suspend fun saveStoredChat(
+        sessionId: String?,
+        modelId: String,
+        messages: List<ChatMessage>,
+        useRemote: Boolean,
+    ): StoredChat
+
+    suspend fun syncLocalChatsToRemote()
 }

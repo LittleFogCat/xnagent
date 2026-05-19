@@ -20,6 +20,7 @@ fun MarkdownText(
     text: String,
     modifier: Modifier = Modifier,
     textColor: Color = MaterialTheme.colorScheme.onSurface,
+    selectable: Boolean = false,
 ) {
     val context = LocalContext.current
     val bodyLarge = MaterialTheme.typography.bodyLarge
@@ -31,14 +32,14 @@ fun MarkdownText(
         modifier = modifier,
         factory = { viewContext ->
             TextView(viewContext).apply {
-                setTextIsSelectable(false)
-                movementMethod = LinkMovementMethod.getInstance()
-                linksClickable = true
                 includeFontPadding = false
                 setBackgroundColor(android.graphics.Color.TRANSPARENT)
             }
         },
         update = { textView ->
+            textView.setTextIsSelectable(selectable)
+            textView.movementMethod = if (selectable) null else LinkMovementMethod.getInstance()
+            textView.linksClickable = !selectable
             textView.setTextColor(textColor.toArgb())
             if (bodyLarge.fontSize.value > 0f) {
                 textView.textSize = bodyLarge.fontSize.value

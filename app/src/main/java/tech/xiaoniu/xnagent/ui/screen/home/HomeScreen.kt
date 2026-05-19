@@ -1,11 +1,13 @@
 package tech.xiaoniu.xnagent.ui.screen.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +20,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.outlined.Air
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
@@ -27,8 +33,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -49,13 +57,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.R
 import tech.xiaoniu.xnagent.ui.component.ChatMessageList
 import tech.xiaoniu.xnagent.ui.component.DropdownSelector
 import tech.xiaoniu.xnagent.ui.model.AgentMode
+import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.HomeUiState
+import tech.xiaoniu.xnagent.ui.model.MessageRole
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
 import tech.xiaoniu.xnagent.ui.model.SessionUiModel
 import tech.xiaoniu.xnagent.ui.model.groupByDate
@@ -108,24 +119,26 @@ fun HomeScreenContent(
     onAction: (HomeIntent) -> Unit = {},
     initialDrawerValue: DrawerValue = DrawerValue.Closed,
     keyboardController: SoftwareKeyboardController? = null
-//    agentMode: AgentMode,
-//    inputText: String,
-//    currentModel: ModelUiModel,
-//    messages: List<ChatMessage>,
-//    models: List<ModelUiModel>,
-//    onModelSelected: (ModelUiModel) -> Unit,
-//    onAgentModeChange: (AgentMode) -> Unit,
-//    onInputChange: (String) -> Unit,
-//    onSend: () -> Unit,
 ) {
     val drawerState = rememberDrawerState(initialDrawerValue)
-    val scope = rememberCoroutineScope()
+    val drawerScope = rememberCoroutineScope()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
         drawerContent = {
-            DrawerContent(modifier, uiState.sessions)
+            DrawerContent(
+                modifier = modifier,
+                sessions = uiState.sessions,
+                onNewChat = {
+                    onAction(HomeIntent.CreateNewChat)
+                    drawerScope.launch { drawerState.close() }
+                },
+                onSessionClick = {
+                    onAction(HomeIntent.SelectSession(it))
+                    drawerScope.launch { drawerState.close() }
+                }
+            )
         }
     ) {
         Scaffold(
@@ -137,11 +150,12 @@ fun HomeScreenContent(
                 TopAppBar(
                     title = {
                         Row(
+                            modifier = Modifier.padding(0.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
                                 {
-                                    scope.launch {
+                                    drawerScope.launch {
                                         if (drawerState.isClosed) {
                                             drawerState.open()
                                         } else {
@@ -164,7 +178,10 @@ fun HomeScreenContent(
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Column {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
                                 Text(
                                     text = "XN",
                                     style = MaterialTheme.typography.bodyLarge
@@ -180,9 +197,9 @@ fun HomeScreenContent(
                                         .size(140.dp, 30.dp)
                                 ) {
                                     Text(
-                                        text = uiState.currentModel?.label ?: "",
+                                        text = uiState.currentModel?.name ?: "",
                                         maxLines = 1,
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodySmall,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
@@ -190,17 +207,33 @@ fun HomeScreenContent(
                         }
                     },
                     actions = {
-                        DropdownSelector(
-                            items = AgentMode.entries.toList(),
-                            onItemSelect = { onAction(HomeIntent.SetAgentMode(it)) },
-                            itemToText = { name },
-                            modifier = Modifier.size(120.dp, 40.dp)
+                        IconButton(
+                            onClick = { onAction(HomeIntent.CreateNewChat) },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color.Transparent
+                            ),
+                            modifier = Modifier.padding(0.dp)
                         ) {
-                            Text(
-                                uiState.agentMode.name,
-                                modifier = Modifier.fillMaxWidth(),
+                            Icon(
+                                painter = painterResource(R.drawable.ic_add),
+                                contentDescription = "Add",
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color.Transparent)
+                                    .padding(6.dp)
                             )
                         }
+//                        DropdownSelector(
+//                            items = AgentMode.entries.toList(),
+//                            onItemSelect = { onAction(HomeIntent.SetAgentMode(it)) },
+//                            itemToText = { name },
+//                            modifier = Modifier.size(120.dp, 40.dp)
+//                        ) {
+//                            Text(
+//                                uiState.agentMode.name,
+//                                modifier = Modifier.fillMaxWidth(),
+//                            )
+//                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.White
@@ -217,61 +250,114 @@ fun HomeScreenContent(
                 // 聊天消息区
                 ChatMessageList(
                     messages = uiState.messages,
+                    onEditUserMessage = { messageId, content ->
+                        onAction(HomeIntent.EditUserMessage(messageId, content))
+                    },
+                    onRegenerateAssistantMessage = {
+                        onAction(HomeIntent.RegenerateAssistantMessage(it))
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 )
 
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 0.dp)
+                ) {
+
+                }
+
                 // 底部输入栏
                 Card(
                     elevation = CardDefaults.cardElevation(4.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(Color.White),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp, 6.dp)
                         .background(Color.White)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextField(
-                            value = uiState.inputText,
-                            onValueChange = { onAction(HomeIntent.UpdateInput(it)) },
-                            placeholder = {
-                                Text(
-                                    text = "输入消息…",
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = TextFieldDefaults.colors(
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent
-                            ),
-                            maxLines = 5,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 8.dp)
-                        )
-
-                        IconButton(
-                            onClick = {
-                                if (uiState.inputText.isNotBlank()) {
-                                    onAction(HomeIntent.SendMessage)
-                                    keyboardController?.hide()
-                                }
-                            },
-                            enabled = uiState.inputText.isNotBlank()
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "发送",
-                                modifier = Modifier.padding(2.dp),
-                                tint = colorResource(R.color.chat_send_button_bg)
+                            TextField(
+                                value = uiState.inputText,
+                                onValueChange = { onAction(HomeIntent.UpdateInput(it)) },
+                                placeholder = {
+                                    Text(
+                                        text = "输入消息…",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = TextFieldDefaults.colors(
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent
+                                ),
+                                maxLines = 5,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(0.dp)
                             )
+                        }
+                        Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                            OutlinedButton(
+                                modifier = Modifier.defaultMinSize(minHeight = 1.dp),
+                                onClick = { onAction(HomeIntent.ToggleDeepThinking) },
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (uiState.isDeepThinkingEnabled) {
+                                        colorResource(R.color.deepthink_bg_color_checked)
+                                    } else {
+                                        colorResource(R.color.deepthink_bg_color_unchecked)
+                                    },
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Lightbulb,
+                                    contentDescription = "",
+                                    tint = if (uiState.isDeepThinkingEnabled) {
+                                        colorResource(R.color.deepthink_text_color_checked)
+                                    } else {
+                                        colorResource(R.color.deepthink_text_color_unchecked)
+                                    },
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.size(2.dp))
+                                Text(
+                                    text = "深度思考",
+                                    fontSize = 12.sp,
+                                    color = if (uiState.isDeepThinkingEnabled) {
+                                        colorResource(R.color.deepthink_text_color_checked)
+                                    } else {
+                                        colorResource(R.color.deepthink_text_color_unchecked)
+                                    }
+                                )
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            IconButton(
+                                onClick = {
+                                    if (uiState.inputText.isNotBlank()) {
+                                        onAction(HomeIntent.SendMessage)
+                                        keyboardController?.hide()
+                                    }
+                                },
+                                enabled = uiState.inputText.isNotBlank()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "发送",
+                                    modifier = Modifier.padding(2.dp),
+                                    tint = colorResource(R.color.chat_send_button_bg)
+                                )
+                            }
                         }
                     }
                 }
@@ -283,21 +369,10 @@ fun HomeScreenContent(
 @Composable
 fun DrawerContent(
     modifier: Modifier = Modifier,
-    sessions: List<SessionUiModel>
+    sessions: List<SessionUiModel>,
+    onNewChat: () -> Unit = {},
+    onSessionClick: (String) -> Unit = {},
 ) {
-    if (sessions.isEmpty()) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(0.82f)
-                .background(Color.White)
-        ) {
-            Text("暂无会话", style = MaterialTheme.typography.bodyMedium)
-            return
-        }
-    }
-    val sessionGroups = sessions.groupByDate()
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -305,36 +380,88 @@ fun DrawerContent(
             .background(Color.White)
             .statusBarsPadding(),
     ) {
-        LazyColumn {
-            sessionGroups.forEach { group ->
-                val groupId = "header_${group.groupTitle}"
-                // 会话组标题（日期）
-                item(key = groupId) {
-                    Text(
-                        text = group.groupTitle,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-                // 组内会话标题
-                items(
-                    count = group.sessions.size,
-                    key = {
-                        "session_${group.sessions[it].id}"
-                    },
-                ) { i ->
-                    Text(
-                        text = group.sessions[i].title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 8.dp)
-                    )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "聊天记录",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onNewChat) {
+                Text("新对话")
+            }
+        }
+
+
+        if (sessions.isEmpty()) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                Text("暂无会话", style = MaterialTheme.typography.bodyMedium)
+            }
+        } else {
+            val sessionGroups = sessions.groupByDate()
+            LazyColumn(
+                modifier = Modifier.weight(1f)
+            ) {
+                sessionGroups.forEach { group ->
+                    val groupId = "header_${group.groupTitle}"
+                    // 会话组标题（日期）
+                    item(key = groupId) {
+                        Text(
+                            text = group.groupTitle,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    // 组内会话标题
+                    items(
+                        count = group.sessions.size,
+                        key = {
+                            "session_${group.sessions[it].id}"
+                        },
+                    ) { i ->
+                        val session = group.sessions[i]
+                        Text(
+                            text = session.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = if (session.selected) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable { onSessionClick(session.id) }
+                                .padding(horizontal = 24.dp, vertical = 10.dp)
+                        )
+                    }
                 }
             }
+        }
+
+        // Logged User
+        Row() {
+            // icon
+
+            // name
+
+            // qrcode icon
+
+            // account setting icon
         }
     }
 }
@@ -351,20 +478,27 @@ fun HomeScreenPreview() {
                 "GPT-3.5 Turbo",
                 "OpenAI",
             ),
-//            messages = listOf(
-//                ChatMessage("1", MessageRole.USER, "你好！"),
-//                ChatMessage("2", MessageRole.ASSISTANT, "你好！有什么可以帮您的吗？"),
-//                ChatMessage("3", MessageRole.USER, "请介绍一下你自己。"),
-//                ChatMessage(
-//                    "4",
-//                    MessageRole.ASSISTANT,
-//                    "我是一个基于 GPT-3.5 Turbo 模型的智能助手，可以帮助你解答问题、提供建议和进行对话。"
-//                ),
-//            ),
             availableModels = listOf(
                 ModelUiModel("gpt-3.5-turbo", "GPT-3.5 Turbo", "OpenAI"),
                 ModelUiModel("gpt-4", "GPT-4", "OpenAI"),
                 ModelUiModel("custom-agent", "自定义 Agent", "本地部署")
+            ),
+            messages = listOf(
+                ChatMessage(
+                    id = "1",
+                    content = "你好！有什么我可以帮助你的吗？",
+                    role = MessageRole.ASSISTANT,
+                ),
+                ChatMessage(
+                    id = "2",
+                    content = "请介绍一下你自己。",
+                    role = MessageRole.USER,
+                ),
+                ChatMessage(
+                    id = "3",
+                    content = "我是一个由 OpenAI 训练的语言模型，旨在帮助用户  解答问题、提供信息和进行对话交流。",
+                    role = MessageRole.ASSISTANT,
+                )
             ),
             sessions = System.currentTimeMillis().let { now ->
                 listOf(
