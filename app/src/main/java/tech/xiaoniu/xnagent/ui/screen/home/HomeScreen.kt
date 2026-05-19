@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -22,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.Air
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -63,6 +66,7 @@ import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.R
 import tech.xiaoniu.xnagent.ui.component.ChatMessageList
 import tech.xiaoniu.xnagent.ui.component.DropdownSelector
+import tech.xiaoniu.xnagent.ui.component.UserAvatar
 import tech.xiaoniu.xnagent.ui.model.AgentMode
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.HomeUiState
@@ -79,6 +83,8 @@ import tech.xiaoniu.xnagent.ui.model.groupByDate
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
+    onOpenSettings: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState(HomeUiState())
@@ -92,7 +98,9 @@ fun HomeScreen(
         modifier = modifier,
         uiState = uiState,
         onAction = { viewModel.dispatch(it) },
-        keyboardController = keyboardController
+        keyboardController = keyboardController,
+        onOpenSettings = onOpenSettings,
+        onOpenLogin = onOpenLogin,
 //        agentMode = agentMode,
 //        inputText = inputText,
 //        messages = messages,
@@ -118,7 +126,9 @@ fun HomeScreenContent(
     uiState: HomeUiState = HomeUiState(),
     onAction: (HomeIntent) -> Unit = {},
     initialDrawerValue: DrawerValue = DrawerValue.Closed,
-    keyboardController: SoftwareKeyboardController? = null
+    keyboardController: SoftwareKeyboardController? = null,
+    onOpenSettings: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
 ) {
     val drawerState = rememberDrawerState(initialDrawerValue)
     val drawerScope = rememberCoroutineScope()
@@ -137,7 +147,18 @@ fun HomeScreenContent(
                 onSessionClick = {
                     onAction(HomeIntent.SelectSession(it))
                     drawerScope.launch { drawerState.close() }
-                }
+                },
+                isGuest = uiState.isGuest,
+                viewerName = uiState.viewerName,
+                viewerEmail = uiState.viewerEmail,
+                onOpenSettings = {
+                    drawerScope.launch { drawerState.close() }
+                    onOpenSettings()
+                },
+                onOpenLogin = {
+                    drawerScope.launch { drawerState.close() }
+                    onOpenLogin()
+                },
             )
         }
     ) {
@@ -256,17 +277,38 @@ fun HomeScreenContent(
                     onRegenerateAssistantMessage = {
                         onAction(HomeIntent.RegenerateAssistantMessage(it))
                     },
+                    onDeleteMessage = {
+                        onAction(HomeIntent.DeleteMessage(it))
+                    },
+                    onFavoriteMessage = {
+                        onAction(HomeIntent.FavoriteMessage(it))
+                    },
+                    favoritedMessageIds = uiState.favoriteMessageIds,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 0.dp)
-                ) {
-
+                if (uiState.isGuestMessageLimitReached) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "游客模式每个会话最多发送 10 条消息，当前已发送 ${uiState.guestUserMessageCount} 条。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onOpenLogin) {
+                            Text("登录")
+                        }
+                        TextButton(onClick = onOpenLogin) {
+                            Text("注册")
+                        }
+                    }
                 }
 
                 // 底部输入栏
@@ -344,12 +386,12 @@ fun HomeScreenContent(
 
                             IconButton(
                                 onClick = {
-                                    if (uiState.inputText.isNotBlank()) {
+                                    if (uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached) {
                                         onAction(HomeIntent.SendMessage)
                                         keyboardController?.hide()
                                     }
                                 },
-                                enabled = uiState.inputText.isNotBlank()
+                                enabled = uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
@@ -372,13 +414,19 @@ fun DrawerContent(
     sessions: List<SessionUiModel>,
     onNewChat: () -> Unit = {},
     onSessionClick: (String) -> Unit = {},
+    isGuest: Boolean = false,
+    viewerName: String = "",
+    viewerEmail: String = "",
+    onOpenSettings: () -> Unit = {},
+    onOpenLogin: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
             .fillMaxHeight()
             .fillMaxWidth(0.82f)
             .background(Color.White)
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
         Row(
             modifier = Modifier
@@ -453,15 +501,70 @@ fun DrawerContent(
             }
         }
 
-        // Logged User
-        Row() {
-            // icon
-
-            // name
-
-            // qrcode icon
-
-            // account setting icon
+        if (isGuest) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenLogin)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                UserAvatar(
+                    label = "游客",
+                    size = 42.dp,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "游客模式",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "前往登录",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.clickable(onClick = onOpenSettings)) {
+                    UserAvatar(
+                        label = viewerName.ifBlank { viewerEmail.ifBlank { "XN" } },
+                        size = 42.dp,
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = viewerName.ifBlank { viewerEmail.substringBefore('@').ifBlank { "XN 用户" } },
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    if (viewerEmail.isNotBlank()) {
+                        Text(
+                            text = viewerEmail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                IconButton(onClick = { }) {
+                    Icon(
+                        imageVector = Icons.Outlined.QrCodeScanner,
+                        contentDescription = "二维码扫描",
+                    )
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "设置",
+                    )
+                }
+            }
         }
     }
 }

@@ -18,4 +18,6 @@ sealed class HomeIntent {
     object ToggleDeepThinking : HomeIntent()
     data class EditUserMessage(val messageId: String, val content: String) : HomeIntent()
     data class RegenerateAssistantMessage(val messageId: String) : HomeIntent()
+    data class DeleteMessage(val messageId: String) : HomeIntent()
+    data class FavoriteMessage(val messageId: String) : HomeIntent()
 }

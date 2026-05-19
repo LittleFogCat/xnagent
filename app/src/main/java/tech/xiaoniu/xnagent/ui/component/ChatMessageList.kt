@@ -27,10 +27,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -71,6 +76,9 @@ fun ChatMessageItem(
     modifier: Modifier = Modifier,
     onEditUserMessage: (String, String) -> Unit = { _, _ -> },
     onRegenerateAssistantMessage: (String) -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {},
+    onFavoriteMessage: (String) -> Unit = {},
+    isFavorited: Boolean = false,
 ) {
     val isUser = message.role == MessageRole.USER
     val context = LocalContext.current
@@ -78,7 +86,7 @@ fun ChatMessageItem(
         context.getSystemService(ClipboardManager::class.java)
     }
     var reasoningExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
-    var showActionDialog by rememberSaveable(message.id) { mutableStateOf(false) }
+    var showActionMenu by rememberSaveable(message.id) { mutableStateOf(false) }
     var showSelectionDialog by rememberSaveable("${message.id}_select") { mutableStateOf(false) }
     var showEditDialog by rememberSaveable("${message.id}_edit") { mutableStateOf(false) }
     var editDraft by rememberSaveable(message.id, message.content) { mutableStateOf(message.content) }
@@ -116,7 +124,7 @@ fun ChatMessageItem(
                     .widthIn(max = if (isUser) maxWidth * 0.77f else maxWidth)
                     .combinedClickable(
                         onClick = { },
-                        onLongClick = { showActionDialog = true }
+                        onLongClick = { showActionMenu = true }
                     )
                     .background(
                         color = if (isUser) {
@@ -152,7 +160,7 @@ fun ChatMessageItem(
                         if (isUser) {
                             Text(
                                 text = message.content,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = Color.Black
                             )
                         } else {
@@ -202,8 +210,99 @@ fun ChatMessageItem(
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
+                            IconButton(
+                                onClick = { onFavoriteMessage(message.id) },
+                                enabled = !isFavorited,
+                                modifier = Modifier.size(32.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.Transparent,
+                                    contentColor = Color.Black.copy(alpha = 0.7f),
+                                    disabledContentColor = Color.Black.copy(alpha = 0.45f),
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = if (isFavorited) {
+                                        Icons.Filled.Bookmark
+                                    } else {
+                                        Icons.Outlined.BookmarkBorder
+                                    },
+                                    contentDescription = if (isFavorited) "已收藏" else "收藏",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                     }
+                }
+
+                DropdownMenu(
+                    expanded = showActionMenu,
+                    onDismissRequest = { showActionMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("复制") },
+                        onClick = {
+                            clipboardManager?.setPrimaryClip(
+                                ClipData.newPlainText("message", message.content)
+                            )
+                            showActionMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.ContentCopy,
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                    if (isUser) {
+                        DropdownMenuItem(
+                            text = { Text("修改并重发") },
+                            onClick = {
+                                editDraft = message.content
+                                showActionMenu = false
+                                showEditDialog = true
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("选择文字") },
+                        onClick = {
+                            showActionMenu = false
+                            showSelectionDialog = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isFavorited) "已收藏" else "收藏") },
+                        onClick = {
+                            if (!isFavorited) {
+                                onFavoriteMessage(message.id)
+                            }
+                            showActionMenu = false
+                        },
+                        enabled = !isFavorited,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isFavorited) {
+                                    Icons.Filled.Bookmark
+                                } else {
+                                    Icons.Outlined.BookmarkBorder
+                                },
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("删除") },
+                        onClick = {
+                            onDeleteMessage(message.id)
+                            showActionMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = null,
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -211,55 +310,6 @@ fun ChatMessageItem(
         if (isUser) {
             Spacer(modifier = Modifier.size(8.dp))
         }
-    }
-
-    if (showActionDialog) {
-        AlertDialog(
-            onDismissRequest = { showActionDialog = false },
-            title = { Text("消息操作") },
-            text = {
-                Column {
-                    TextButton(
-                        onClick = {
-                            clipboardManager?.setPrimaryClip(
-                                ClipData.newPlainText("message", message.content)
-                            )
-                            showActionDialog = false
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("复制")
-                    }
-                    if (isUser) {
-                        TextButton(
-                            onClick = {
-                                editDraft = message.content
-                                showActionDialog = false
-                                showEditDialog = true
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("修改并重发")
-                        }
-                    }
-                    TextButton(
-                        onClick = {
-                            showActionDialog = false
-                            showSelectionDialog = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("选择文字")
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showActionDialog = false }) {
-                    Text("关闭")
-                }
-            },
-        )
     }
 
     if (showSelectionDialog) {
@@ -277,7 +327,7 @@ fun ChatMessageItem(
                         SelectionContainer {
                             Text(
                                 text = message.content,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = Color.Black,
                             )
                         }
@@ -382,6 +432,9 @@ fun ChatMessageList(
     modifier: Modifier = Modifier,
     onEditUserMessage: (String, String) -> Unit = { _, _ -> },
     onRegenerateAssistantMessage: (String) -> Unit = {},
+    onDeleteMessage: (String) -> Unit = {},
+    onFavoriteMessage: (String) -> Unit = {},
+    favoritedMessageIds: Set<String> = emptySet(),
 ) {
     val listState = rememberLazyListState()
     var shouldFollowBottom by remember { mutableStateOf(true) }
@@ -485,6 +538,9 @@ fun ChatMessageList(
                     message = message,
                     onEditUserMessage = onEditUserMessage,
                     onRegenerateAssistantMessage = onRegenerateAssistantMessage,
+                    onDeleteMessage = onDeleteMessage,
+                    onFavoriteMessage = onFavoriteMessage,
+                    isFavorited = favoritedMessageIds.contains(message.id),
                 )
             }
         }

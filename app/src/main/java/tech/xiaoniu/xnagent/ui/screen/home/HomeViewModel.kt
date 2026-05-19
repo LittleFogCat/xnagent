@@ -16,6 +16,8 @@ import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.local.entity.Session
 import tech.xiaoniu.xnagent.data.remote.dto.ChatRequest
 import tech.xiaoniu.xnagent.data.remote.dto.ThinkingConfig
+import tech.xiaoniu.xnagent.data.repository.FavoriteMessage
+import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
 import tech.xiaoniu.xnagent.data.repository.HomeRepository
 import tech.xiaoniu.xnagent.data.repository.StoredChat
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
@@ -34,12 +36,17 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val homeRepository: HomeRepository,
     private val authRepository: AuthRepository,
+    private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
     private val tag = javaClass.simpleName
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var initialized = false
+
+    private companion object {
+        const val GUEST_USER_MESSAGE_LIMIT = 10
+    }
 
     fun dispatch(intent: HomeIntent) {
         when (intent) {
@@ -62,14 +69,22 @@ class HomeViewModel @Inject constructor(
 
             is HomeIntent.EditUserMessage -> editUserMessage(intent.messageId, intent.content)
             is HomeIntent.RegenerateAssistantMessage -> regenerateAssistantMessage(intent.messageId)
+            is HomeIntent.DeleteMessage -> deleteMessage(intent.messageId)
+            is HomeIntent.FavoriteMessage -> favoriteMessage(intent.messageId)
         }
     }
 
     private fun initialize() {
-        if (initialized) return
+        if (initialized) {
+            if (authRepository.session.value.isLoggedIn) {
+                refreshRemoteSessions()
+            }
+            return
+        }
         initialized = true
         observeModels()
         observeAuthState()
+        observeFavorites()
     }
 
     private fun observeModels() {
@@ -107,7 +122,9 @@ class HomeViewModel @Inject constructor(
                     it.copy(
                         isLoggedIn = session.isLoggedIn,
                         isGuest = session.isGuest,
-                    )
+                        viewerName = session.user?.username?.substringBefore('@').orEmpty(),
+                        viewerEmail = session.user?.email.orEmpty(),
+                    ).withConversation(it.messages)
                 }
 
                 if (!session.canEnterHome) {
@@ -115,8 +132,7 @@ class HomeViewModel @Inject constructor(
                         it.copy(
                             currentSessionId = null,
                             sessions = emptyList(),
-                            messages = emptyList(),
-                        )
+                        ).withConversation(emptyList())
                     }
                     return@collectLatest
                 }
@@ -132,6 +148,16 @@ class HomeViewModel @Inject constructor(
                     homeRepository.sessions.collect { sessions ->
                         applySessionList(sessions.map { it.toSessionUiModel() })
                     }
+                }
+            }
+        }
+    }
+
+    private fun observeFavorites() {
+        viewModelScope.launch {
+            favoriteRepository.favorites.collectLatest { favorites ->
+                _uiState.update {
+                    it.copy(favoriteMessageIds = favorites.map { favorite -> favorite.id }.toSet())
                 }
             }
         }
@@ -167,12 +193,11 @@ class HomeViewModel @Inject constructor(
             state.copy(
                 currentSessionId = nextSessionId,
                 sessions = sessions.map { it.copy(selected = it.id == nextSessionId) },
-                messages = if (nextSessionId == null) emptyList() else state.messages,
-            )
+            ).withConversation(if (nextSessionId == null) emptyList() else state.messages)
         }
 
         if (nextSessionId == null) {
-            _uiState.update { it.copy(messages = emptyList()) }
+            _uiState.update { it.withConversation(emptyList()) }
             return
         }
 
@@ -202,15 +227,14 @@ class HomeViewModel @Inject constructor(
             state.copy(
                 currentSessionId = null,
                 currentSessionModelId = state.currentModel?.id,
-                messages = emptyList(),
                 sessions = state.sessions.map { it.copy(selected = false) },
-            )
+            ).withConversation(emptyList())
         }
     }
 
     private fun sendNewMessage() {
         val text = _uiState.value.inputText.trim()
-        if (text.isBlank()) return
+        if (text.isBlank() || _uiState.value.isGuestMessageLimitReached) return
 
         val userMessage = ChatMessage(
             id = UUID.randomUUID().toString(),
@@ -221,8 +245,7 @@ class HomeViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 inputText = "",
-                messages = baseMessages,
-            )
+            ).withConversation(baseMessages)
         }
         sendConversation(baseMessages)
     }
@@ -242,7 +265,7 @@ class HomeViewModel @Inject constructor(
             timestamp = System.currentTimeMillis(),
         )
         val baseMessages = currentMessages.take(targetIndex) + editedMessage
-        _uiState.update { it.copy(messages = baseMessages) }
+        _uiState.update { it.withConversation(baseMessages) }
         sendConversation(baseMessages)
     }
 
@@ -258,8 +281,70 @@ class HomeViewModel @Inject constructor(
         } ?: return
 
         val baseMessages = currentMessages.take(userIndex + 1)
-        _uiState.update { it.copy(messages = baseMessages) }
+        _uiState.update { it.withConversation(baseMessages) }
         sendConversation(baseMessages)
+    }
+
+    private fun deleteMessage(messageId: String) {
+        val currentMessages = _uiState.value.messages
+        if (currentMessages.none { it.id == messageId }) return
+
+        val updatedMessages = currentMessages.filterNot { it.id == messageId }
+        persistConversation(updatedMessages)
+    }
+
+    private fun favoriteMessage(messageId: String) {
+        val state = _uiState.value
+        if (state.favoriteMessageIds.contains(messageId)) return
+
+        val message = state.messages.firstOrNull { it.id == messageId } ?: return
+        val sessionTitle = state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
+            ?: state.messages.firstOrNull { it.role == MessageRole.USER }?.content?.take(24)
+            ?: "当前会话"
+
+        viewModelScope.launch {
+            favoriteRepository.addFavorite(
+                FavoriteMessage(
+                    id = message.id,
+                    sessionId = state.currentSessionId,
+                    sessionTitle = sessionTitle,
+                    role = message.role.name,
+                    content = message.content.ifBlank { message.reasoningContent },
+                    timestamp = message.timestamp,
+                )
+            )
+        }
+    }
+
+    private fun persistConversation(messages: List<ChatMessage>) {
+        val currentModel = _uiState.value.currentModel
+        if (currentModel == null) {
+            _uiState.update { it.withConversation(messages) }
+            return
+        }
+
+        val currentSessionId = _uiState.value.currentSessionId
+        val useRemote = authRepository.session.value.isLoggedIn
+        viewModelScope.launch {
+            val storedChat = runCatching {
+                homeRepository.saveStoredChat(
+                    sessionId = currentSessionId,
+                    modelId = currentModel.id,
+                    messages = messages,
+                    useRemote = useRemote,
+                )
+            }.onFailure {
+                Log.w(tag, "persistConversation: save chat failed", it)
+            }.getOrNull()
+
+            if (storedChat != null) {
+                applyStoredChat(storedChat, messagesOverride = messages)
+            } else {
+                _uiState.update {
+                    it.copy(currentSessionId = currentSessionId).withConversation(messages)
+                }
+            }
+        }
     }
 
     private fun sendConversation(baseMessages: List<ChatMessage>) {
@@ -327,8 +412,7 @@ class HomeViewModel @Inject constructor(
                 _uiState.update { state ->
                     state.copy(
                         currentSessionId = persistedSessionId,
-                        messages = conversation,
-                    )
+                    ).withConversation(conversation)
                 }
             }
 
@@ -396,9 +480,8 @@ class HomeViewModel @Inject constructor(
                 currentSessionId = storedChat.sessionId,
                 currentSessionModelId = storedChat.modelId,
                 currentModel = selectedModel ?: state.currentModel,
-                messages = messagesOverride ?: storedChat.messages,
                 sessions = state.sessions.map { it.copy(selected = it.id == storedChat.sessionId) },
-            )
+            ).withConversation(messagesOverride ?: storedChat.messages)
         }
 
         if (authRepository.session.value.isLoggedIn) {
@@ -427,5 +510,14 @@ class HomeViewModel @Inject constructor(
             currentMessages.add(message)
         }
         return currentMessages
+    }
+
+    private fun HomeUiState.withConversation(messages: List<ChatMessage>): HomeUiState {
+        val userMessageCount = messages.count { it.role == MessageRole.USER }
+        return copy(
+            messages = messages,
+            guestUserMessageCount = userMessageCount,
+            isGuestMessageLimitReached = isGuest && userMessageCount >= GUEST_USER_MESSAGE_LIMIT,
+        )
     }
 }

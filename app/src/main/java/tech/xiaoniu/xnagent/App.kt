@@ -18,6 +18,8 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.repository.AuthRepositoryImpl
+import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
+import tech.xiaoniu.xnagent.data.repository.FavoriteRepositoryImpl
 import tech.xiaoniu.xnagent.data.local.AuthStore
 import tech.xiaoniu.xnagent.data.local.XNDatabase
 import tech.xiaoniu.xnagent.data.local.dao.ChatDao
@@ -51,6 +53,13 @@ data class AppConfig(
 @Module
 @InstallIn(SingletonComponent::class)
 class AppModule {
+
+    @Provides
+    @Singleton
+    fun provideFavoriteRepository(
+        @ApplicationContext context: Context,
+        json: Json,
+    ): FavoriteRepository = FavoriteRepositoryImpl(context, json)
 
     @Provides
     @Singleton
