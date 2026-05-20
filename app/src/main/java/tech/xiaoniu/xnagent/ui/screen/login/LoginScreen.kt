@@ -1,6 +1,16 @@
 package tech.xiaoniu.xnagent.ui.screen.login
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,11 +23,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,13 +51,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -52,6 +71,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import kotlinx.coroutines.launch
+import kotlin.random.Random
 import tech.xiaoniu.xnagent.ui.model.LoginUiState
 
 /**
@@ -138,6 +159,7 @@ fun LoginContent(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -186,7 +208,7 @@ fun LoginContent(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Surface(
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = Color.White/*.copy(alpha = 0.8f)*/,
                     shape = CircleShape,
                     shadowElevation = 10.dp,
                     modifier = Modifier.size(74.dp),
@@ -263,7 +285,13 @@ fun LoginContent(
                         label = { Text("邮箱") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        modifier = Modifier.fillMaxWidth(),
+                        isError = uiState.emailError != null,
+                        supportingText = {
+                            uiState.emailError?.let { Text(text = it) }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
                         shape = RoundedCornerShape(18.dp),
                         colors = fieldColors,
                     )
@@ -274,10 +302,56 @@ fun LoginContent(
                         label = { Text("密码") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
+                        isError = uiState.passwordError != null,
+                        supportingText = {
+                            uiState.passwordError?.let { Text(text = it) }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bringIntoViewOnFocus(),
                         shape = RoundedCornerShape(18.dp),
                         colors = fieldColors,
                     )
+
+                    if (!uiState.isRegisterMode && uiState.loginCaptchaRequired) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = accentSoft,
+                        ) {
+                            CaptchaQuestionImage(
+                                question = uiState.loginCaptchaValue,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(96.dp),
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = uiState.loginCaptchaAnswer,
+                            onValueChange = { onAction(LoginIntent.UpdateCaptchaAnswer(it)) },
+                            label = { Text("图形验证码") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                            isError = uiState.loginCaptchaAnswerError != null,
+                            supportingText = {
+                                uiState.loginCaptchaAnswerError?.let { Text(text = it) }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = fieldColors,
+                        )
+
+                        TextButton(
+                            onClick = { onAction(LoginIntent.RefreshCaptcha) },
+                            enabled = !uiState.isSubmitting,
+                            modifier = Modifier.align(Alignment.End),
+                        ) {
+                            Text("刷新验证码")
+                        }
+                    }
 
                     if (uiState.isRegisterMode) {
                         Surface(
@@ -285,12 +359,21 @@ fun LoginContent(
                             shape = RoundedCornerShape(18.dp),
                             color = accentSoft,
                         ) {
-                            Text(
-                                text = if (uiState.captchaQuestion.isBlank()) "正在加载人机验证..." else uiState.captchaQuestion,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = primaryText,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            )
+                            if (uiState.captchaQuestion.isBlank()) {
+                                Text(
+                                    text = "正在加载人机验证...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = primaryText,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                )
+                            } else {
+                                CaptchaQuestionImage(
+                                    question = uiState.captchaQuestion,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(96.dp),
+                                )
+                            }
                         }
 
                         OutlinedTextField(
@@ -299,7 +382,13 @@ fun LoginContent(
                             label = { Text("人机验证答案") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
+                            isError = uiState.captchaAnswerError != null,
+                            supportingText = {
+                                uiState.captchaAnswerError?.let { Text(text = it) }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewOnFocus(),
                             shape = RoundedCornerShape(18.dp),
                             colors = fieldColors,
                         )
@@ -328,7 +417,13 @@ fun LoginContent(
                                 label = { Text("邮箱验证码") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth(),
+                                isError = uiState.verificationCodeError != null,
+                                supportingText = {
+                                    uiState.verificationCodeError?.let { Text(text = it) }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .bringIntoViewOnFocus(),
                                 shape = RoundedCornerShape(18.dp),
                                 colors = fieldColors,
                             )
@@ -382,6 +477,134 @@ fun LoginContent(
             }
         }
     }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.bringIntoViewOnFocus(): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    val coroutineScope = rememberCoroutineScope()
+
+    return this
+        .bringIntoViewRequester(requester)
+        .onFocusChanged { focusState ->
+            if (focusState.isFocused) {
+                coroutineScope.launch {
+                    requester.bringIntoView()
+                }
+            }
+        }
+}
+
+@Composable
+private fun CaptchaQuestionImage(
+    question: String,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val widthPx = with(density) { 320.dp.roundToPx() }
+    val heightPx = with(density) { 96.dp.roundToPx() }
+    val captchaBitmap = remember(question, widthPx, heightPx) {
+        createCaptchaBitmap(
+            question = question,
+            widthPx = widthPx,
+            heightPx = heightPx,
+        ).asImageBitmap()
+    }
+
+    Image(
+        bitmap = captchaBitmap,
+        contentDescription = "人机验证题目",
+        contentScale = ContentScale.FillBounds,
+        modifier = modifier,
+    )
+}
+
+private fun createCaptchaBitmap(
+    question: String,
+    widthPx: Int,
+    heightPx: Int,
+): Bitmap {
+    val safeQuestion = question.ifBlank { "..." }
+    val random = Random(safeQuestion.hashCode())
+    val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val palette = intArrayOf(
+        AndroidColor.parseColor("#0F172A"),
+        AndroidColor.parseColor("#0EA5E9"),
+        AndroidColor.parseColor("#0284C7"),
+        AndroidColor.parseColor("#1E293B"),
+    )
+
+    val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = LinearGradient(
+            0f,
+            0f,
+            widthPx.toFloat(),
+            heightPx.toFloat(),
+            AndroidColor.parseColor("#F8FBFF"),
+            AndroidColor.parseColor("#DFF7FF"),
+            Shader.TileMode.CLAMP,
+        )
+    }
+    canvas.drawRect(0f, 0f, widthPx.toFloat(), heightPx.toFloat(), backgroundPaint)
+
+    val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = heightPx * 0.02f
+    }
+    repeat(8) {
+        linePaint.color = palette[random.nextInt(palette.size)]
+        linePaint.alpha = random.nextInt(70, 140)
+        val path = Path().apply {
+            moveTo(random.nextFloat() * widthPx, random.nextFloat() * heightPx)
+            quadTo(
+                random.nextFloat() * widthPx,
+                random.nextFloat() * heightPx,
+                random.nextFloat() * widthPx,
+                random.nextFloat() * heightPx,
+            )
+        }
+        canvas.drawPath(path, linePaint)
+    }
+
+    val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    repeat(90) {
+        dotPaint.color = palette[random.nextInt(palette.size)]
+        dotPaint.alpha = random.nextInt(25, 80)
+        canvas.drawCircle(
+            random.nextFloat() * widthPx,
+            random.nextFloat() * heightPx,
+            random.nextFloat() * heightPx * 0.05f + 1f,
+            dotPaint,
+        )
+    }
+
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = heightPx * 0.38f
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+    }
+    val slotWidth = widthPx.toFloat() / (safeQuestion.length + 1)
+    val baseline = heightPx * 0.62f
+    safeQuestion.forEachIndexed { index, char ->
+        val drawX = slotWidth * (index + 1) + (random.nextFloat() - 0.5f) * slotWidth * 0.24f
+        val drawY = baseline + (random.nextFloat() - 0.5f) * heightPx * 0.16f
+        textPaint.color = palette[random.nextInt(palette.size)]
+
+        canvas.save()
+        canvas.rotate((random.nextFloat() - 0.5f) * 36f, drawX, drawY)
+        canvas.scale(
+            1f + (random.nextFloat() - 0.5f) * 0.18f,
+            1f + (random.nextFloat() - 0.5f) * 0.12f,
+            drawX,
+            drawY,
+        )
+        canvas.drawText(char.toString(), drawX, drawY, textPaint)
+        canvas.restore()
+    }
+
+    return bitmap
 }
 
 @Composable
