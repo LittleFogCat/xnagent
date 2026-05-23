@@ -62,5 +62,7 @@ interface HomeRepository {
         useRemote: Boolean,
     ): StoredChat
 
+    suspend fun clearLocalChats()
+
     suspend fun syncLocalChatsToRemote()
 }

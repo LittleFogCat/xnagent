@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +67,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var expandedSection by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
+    var showClearLocalDataDialog by rememberSaveable { mutableStateOf(false) }
     val noticeMessage = uiState.noticeMessage
 
     Scaffold(
@@ -182,6 +184,18 @@ fun SettingsScreen(
             }
 
             SettingsRow(
+                icon = Icons.Outlined.DeleteOutline,
+                title = "清除本地数据",
+                desc = if (uiState.isClearingLocalData) {
+                    "正在清理本地数据..."
+                } else {
+                    "清除本地聊天记录、收藏与登录状态"
+                },
+                enabled = !uiState.isClearingLocalData,
+                onClick = { showClearLocalDataDialog = true },
+            )
+
+            SettingsRow(
                 icon = Icons.AutoMirrored.Outlined.Logout,
                 title = if (isGuest) "前往登录" else "退出登录",
                 desc = if (isGuest) "登录后解锁完整能力" else null,
@@ -205,6 +219,35 @@ fun SettingsScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
         }
+
+        if (showClearLocalDataDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearLocalDataDialog = false },
+                title = { Text("清除本地数据") },
+                text = {
+                    Text("将删除本地聊天记录、收藏内容和登录状态，此操作不可恢复。远端聊天记录不会被删除。")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearLocalDataDialog = false
+                            viewModel.clearLocalData()
+                        },
+                        enabled = !uiState.isClearingLocalData,
+                    ) {
+                        Text("确认清除")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showClearLocalDataDialog = false },
+                        enabled = !uiState.isClearingLocalData,
+                    ) {
+                        Text("取消")
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -213,12 +256,13 @@ private fun SettingsRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     desc: String? = null,
+    enabled: Boolean = true,
     onClick: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 4.dp)
     ) {
         Row(

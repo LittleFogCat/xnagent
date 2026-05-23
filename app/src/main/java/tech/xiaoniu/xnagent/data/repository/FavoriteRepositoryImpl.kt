@@ -29,6 +29,10 @@ class FavoriteRepositoryImpl @Inject constructor(
         persist(_favorites.value.filterNot { it.id == id })
     }
 
+    override suspend fun clearFavorites() {
+        persist(emptyList())
+    }
+
     private fun loadFavorites(): List<FavoriteMessage> {
         val raw = preferences.getString(KEY_FAVORITES, null).orEmpty()
         if (raw.isBlank()) return emptyList()

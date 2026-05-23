@@ -260,6 +260,11 @@ class HomeRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun clearLocalChats() = withContext(Dispatchers.IO) {
+        chatDao.clearChatMessages()
+        chatDao.clearSessions()
+    }
+
     private fun ChatDto.toStoredChat(): StoredChat {
         val remoteMessages = messages.orEmpty().mapIndexed { index, message ->
             message.toUiChatMessage(

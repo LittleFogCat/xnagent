@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.data.remote.dto.ChatTargetDto
 import tech.xiaoniu.xnagent.data.remote.dto.CreateChatRequest
+import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.repository.FavoriteMessage
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
 import tech.xiaoniu.xnagent.data.repository.HomeRepository
@@ -29,10 +30,12 @@ data class SettingsUiState(
     val agents: List<AgentUiState> = emptyList(),
     val favorites: List<FavoriteMessage> = emptyList(),
     val noticeMessage: String? = null,
+    val isClearingLocalData: Boolean = false,
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    private val authRepository: AuthRepository,
     private val homeRepository: HomeRepository,
     private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
@@ -109,6 +112,32 @@ class SettingsViewModel @Inject constructor(
     fun removeFavorite(id: String) {
         viewModelScope.launch {
             favoriteRepository.removeFavorite(id)
+        }
+    }
+
+    fun clearLocalData() {
+        if (_uiState.value.isClearingLocalData) return
+
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(
+                    noticeMessage = null,
+                    isClearingLocalData = true,
+                )
+            }
+
+            runCatching {
+                homeRepository.clearLocalChats()
+                favoriteRepository.clearFavorites()
+                authRepository.logout()
+            }.onFailure {
+                _uiState.update { state ->
+                    state.copy(
+                        isClearingLocalData = false,
+                        noticeMessage = "清除本地数据失败，请稍后重试",
+                    )
+                }
+            }
         }
     }
 }

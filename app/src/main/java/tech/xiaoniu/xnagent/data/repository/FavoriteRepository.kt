@@ -19,4 +19,6 @@ interface FavoriteRepository {
     suspend fun addFavorite(message: FavoriteMessage)
 
     suspend fun removeFavorite(id: String)
+
+    suspend fun clearFavorites()
 }
