@@ -2,6 +2,13 @@ package tech.xiaoniu.xnagent.ui.component
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -56,8 +63,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -65,6 +74,8 @@ import kotlinx.coroutines.flow.first
 import tech.xiaoniu.xnagent.R
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.MessageRole
+
+private const val REASONING_EXPAND_ANIMATION_DURATION_MS = 220
 
 /**
  * 单条聊天消息项
@@ -98,24 +109,6 @@ fun ChatMessageItem(
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Top
     ) {
-//        if (!isUser) {
-//            // 助手头像
-//            Surface(
-//                modifier = Modifier.size(32.dp),
-//                shape = RoundedCornerShape(8.dp),
-//                color = MaterialTheme.colorScheme.primaryContainer
-//            ) {
-//                Icon(
-//                    imageVector = Icons.Default.SmartToy,
-//                    contentDescription = "Assistant",
-//                    modifier = Modifier
-//                        .padding(4.dp)
-//                        .size(24.dp),
-//                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-//                )
-//            }
-//            Spacer(modifier = Modifier.size(8.dp))
-//        }
 
         BoxWithConstraints {
             Box(
@@ -389,6 +382,11 @@ private fun ReasoningSection(
 ) {
     val summaryColor = Color.Black.copy(alpha = 0.62f)
     val reasoningColor = Color.Black.copy(alpha = 0.54f)
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(durationMillis = REASONING_EXPAND_ANIMATION_DURATION_MS),
+        label = "reasoningArrowRotation"
+    )
 
     if (message.isThinking) {
         Text(
@@ -398,28 +396,55 @@ private fun ReasoningSection(
         )
         Spacer(modifier = Modifier.height(4.dp))
     } else {
-        Text(
-            text = buildReasoningSummary(message.reasoningDurationMs, expanded),
+        Row(
             modifier = Modifier.clickable(onClick = onToggleExpanded),
-            style = MaterialTheme.typography.bodySmall,
-            color = summaryColor
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         )
+        {
+            Text(
+                text = buildReasoningSummary(message.reasoningDurationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = summaryColor
+            )
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_right),
+                contentDescription = if (expanded) "收起思考内容" else "展开思考内容",
+                tint = summaryColor,
+                modifier = Modifier
+                    .size(14.dp)
+                    .graphicsLayer { rotationZ = arrowRotation }
+            )
+        }
     }
 
-    if (showReasoning) {
-        Text(
-            text = message.reasoningContent,
-            style = MaterialTheme.typography.bodyMedium,
-            color = reasoningColor
-        )
+    AnimatedVisibility(
+        visible = showReasoning,
+        enter = expandVertically(
+            expandFrom = Alignment.Bottom,
+            animationSpec = tween(durationMillis = REASONING_EXPAND_ANIMATION_DURATION_MS)
+        ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+        exit = shrinkVertically(
+            shrinkTowards = Alignment.Bottom,
+            animationSpec = tween(durationMillis = 180)
+        ) + fadeOut(animationSpec = tween(durationMillis = 120)),
+    ) {
+        Box(
+            modifier = Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp)
+        ) {
+            Text(
+                text = message.reasoningContent,
+                style = MaterialTheme.typography.bodyMedium,
+                color = reasoningColor
+            )
+        }
     }
 }
 
-private fun buildReasoningSummary(reasoningDurationMs: Long?, expanded: Boolean): String {
-    val suffix = if (expanded) "v" else ">"
+private fun buildReasoningSummary(reasoningDurationMs: Long?): String {
     val seconds = ((reasoningDurationMs ?: 0L) + 999L) / 1000L
     val displaySeconds = if (seconds <= 0L) 1L else seconds
-    return "已思考（用时 ${displaySeconds} 秒）$suffix"
+    return "已思考（用时 ${displaySeconds} 秒）"
 }
 
 /**
