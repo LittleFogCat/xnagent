@@ -53,7 +53,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -172,7 +171,7 @@ fun ChatMessageItem(
                         }
                     }
 
-                    if (!isUser && message.content.isNotBlank() && !message.isThinking) {
+                    if (!isUser && message.content.isNotBlank() && !message.isGenerating) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -437,23 +436,15 @@ fun ChatMessageList(
     favoritedMessageIds: Set<String> = emptySet(),
 ) {
     val listState = rememberLazyListState()
+    val displayMessages = remember(messages) { messages.asReversed() }
     var shouldFollowBottom by remember { mutableStateOf(true) }
     var isAutoScrolling by remember { mutableStateOf(false) }
-    var previousLastMessageId by remember { mutableStateOf<String?>(null) }
 
     val isAtBottom by remember {
         derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-                ?: return@derivedStateOf true
-            val totalItems = listState.layoutInfo.totalItemsCount
+            if (displayMessages.isEmpty()) return@derivedStateOf true
 
-            // 1. 最后一条 item 必须是最新消息
-            if (lastVisibleItem.index < totalItems - 1) return@derivedStateOf false
-
-            // 2. 最后一条 item 的底部必须在视口内（考虑 contentPadding）
-            val itemBottom = lastVisibleItem.offset + lastVisibleItem.size
-            val viewportBottom = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.afterContentPadding
-            itemBottom <= viewportBottom
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset <= 1
         }
     }
 
@@ -468,53 +459,25 @@ fun ChatMessageList(
             }
     }
 
-    suspend fun scrollLastMessageToBottom(jumpToLastMessage: Boolean) {
-        if (messages.isEmpty()) return
+    suspend fun scrollLatestMessageToBottom() {
+        if (displayMessages.isEmpty()) return
 
         snapshotFlow { listState.layoutInfo.totalItemsCount }
-            .first { it == messages.size }
+            .first { it == displayMessages.size }
 
-        repeat(2) { pass ->
-            withFrameNanos { }
-
-            var lastVisibleItem = listState.layoutInfo.visibleItemsInfo
-                .firstOrNull { it.index == messages.lastIndex }
-
-            if (lastVisibleItem == null) {
-                if (!jumpToLastMessage && pass > 0) return
-
-                listState.scrollToItem(messages.lastIndex)
-                withFrameNanos { }
-                lastVisibleItem = listState.layoutInfo.visibleItemsInfo
-                    .firstOrNull { it.index == messages.lastIndex }
-                    ?: return
-            }
-
-            val viewportBottom = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.afterContentPadding
-            val overflow = lastVisibleItem.offset + lastVisibleItem.size - viewportBottom
-            if (overflow > 0) {
-                listState.scrollBy(overflow.toFloat())
-            } else {
-                return
-            }
-        }
+        listState.scrollToItem(0)
     }
 
-    val lastMessage = messages.lastOrNull()
-    LaunchedEffect(lastMessage?.id, lastMessage?.content, lastMessage?.reasoningContent, lastMessage?.isThinking, shouldFollowBottom) {
-        if (lastMessage == null) {
-            previousLastMessageId = null
+    val latestMessage = messages.lastOrNull()
+
+    LaunchedEffect(latestMessage?.id, shouldFollowBottom) {
+        if (latestMessage == null || !shouldFollowBottom) {
             return@LaunchedEffect
         }
 
-        val jumpToLastMessage = lastMessage.id != previousLastMessageId
-        previousLastMessageId = lastMessage.id
-
-        if (!shouldFollowBottom) return@LaunchedEffect
-
         isAutoScrolling = true
         try {
-            scrollLastMessageToBottom(jumpToLastMessage = jumpToLastMessage)
+            scrollLatestMessageToBottom()
         } finally {
             isAutoScrolling = false
         }
@@ -527,11 +490,12 @@ fun ChatMessageList(
         LazyColumn(
             state = listState,
             modifier = modifier.fillMaxSize(),
+            reverseLayout = true,
             verticalArrangement = Arrangement.spacedBy(4.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
         ) {
             items(
-                items = messages,
+                items = displayMessages,
                 key = { it.id }
             ) { message ->
                 ChatMessageItem(

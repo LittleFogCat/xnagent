@@ -383,6 +383,7 @@ class HomeViewModel @Inject constructor(
             var accumulatedReasoning = ""
             var thinkingStartedAtMs: Long? = null
             var isThinking = false
+            var isGenerating = false
 
             fun buildAssistantMessage(): ChatMessage {
                 val thinkingDurationMs = thinkingStartedAtMs?.let { startedAt ->
@@ -400,6 +401,7 @@ class HomeViewModel @Inject constructor(
                     reasoningContent = accumulatedReasoning,
                     reasoningDurationMs = if (accumulatedReasoning.isBlank()) null else thinkingDurationMs,
                     isThinking = isThinking,
+                    isGenerating = isGenerating,
                 )
             }
 
@@ -424,6 +426,7 @@ class HomeViewModel @Inject constructor(
                             thinkingStartedAtMs = System.currentTimeMillis()
                         }
                         isThinking = true
+                        isGenerating = true
                         accumulatedReasoning += result.content
                         upsertAssistantMessage()
                     }
@@ -432,6 +435,7 @@ class HomeViewModel @Inject constructor(
                         Log.d(tag, "sendToLLM: ${currentTimeF()} streaming...: ${result.content}")
                         accumulatedContent += result.content
                         isThinking = false
+                        isGenerating = true
                         upsertAssistantMessage()
                     }
 
@@ -439,18 +443,22 @@ class HomeViewModel @Inject constructor(
                         Log.w(tag, "sendToLLM: response error", result.error)
                         accumulatedContent = "哎呀，好像出错了！错误信息：${result.error.message}"
                         isThinking = false
+                        isGenerating = false
                         upsertAssistantMessage()
                     }
 
                     is SendToLLMResult.Success -> {
                         isThinking = false
+                        isGenerating = false
+                        upsertAssistantMessage()
                         Log.i(tag, "sendToLLM: onSuccess")
                     }
                 }
             }
 
-            if (assistantMessageId != null && isThinking) {
+            if (assistantMessageId != null && (isThinking || isGenerating)) {
                 isThinking = false
+                isGenerating = false
                 upsertAssistantMessage()
             }
 

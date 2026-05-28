@@ -15,14 +15,6 @@ import tech.xiaoniu.xnagent.data.remote.dto.UpdateChatRequest
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.SendToLLMResult
 
-data class StoredChat(
-    val sessionId: String,
-    val title: String,
-    val modelId: String,
-    val messages: List<ChatMessage>,
-    val updatedAt: Long,
-)
-
 /**
  * @author littlefogcat
  * @email littlefogcat@foxmail.com
