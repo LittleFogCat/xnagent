@@ -133,6 +133,7 @@ fun HomeScreenContent(
     val drawerState = rememberDrawerState(initialDrawerValue)
     val drawerScope = rememberCoroutineScope()
 
+    // 抽屉区域负责会话切换、创建新对话以及进入设置/登录。
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -167,7 +168,7 @@ fun HomeScreenContent(
                 .fillMaxSize()
                 .imePadding(),
             topBar = {
-                // 顶栏
+                // 顶部栏提供抽屉开关、当前模型选择和新建会话入口。
                 TopAppBar(
                     title = {
                         Row(
@@ -268,7 +269,7 @@ fun HomeScreenContent(
                     .fillMaxSize()
                     .background(Color.White)
             ) {
-                // 聊天消息区
+                // 主内容区展示当前会话消息，并透传编辑、重试、删除与收藏动作。
                 ChatMessageList(
                     messages = uiState.messages,
                     onEditUserMessage = { messageId, content ->
@@ -289,6 +290,7 @@ fun HomeScreenContent(
                         .fillMaxWidth()
                 )
 
+                // 游客达到单会话消息上限时，在输入区上方直接提示登录入口。
                 if (uiState.isGuestMessageLimitReached) {
                     Row(
                         modifier = Modifier
@@ -311,7 +313,7 @@ fun HomeScreenContent(
                     }
                 }
 
-                // 底部输入栏
+                // 底部输入区统一承载输入框、深度思考开关和发送按钮。
                 Card(
                     elevation = CardDefaults.cardElevation(4.dp),
                     shape = RoundedCornerShape(20.dp),
@@ -408,6 +410,11 @@ fun HomeScreenContent(
     }
 }
 
+/**
+ * 左侧抽屉内容。
+ *
+ * 上半区展示历史会话，下半区展示当前用户入口与设置入口。
+ */
 @Composable
 fun DrawerContent(
     modifier: Modifier = Modifier,
@@ -444,7 +451,7 @@ fun DrawerContent(
             }
         }
 
-
+        // 会话列表按日期分组展示，便于在历史记录较多时快速定位。
         if (sessions.isEmpty()) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -461,7 +468,6 @@ fun DrawerContent(
             ) {
                 sessionGroups.forEach { group ->
                     val groupId = "header_${group.groupTitle}"
-                    // 会话组标题（日期）
                     item(key = groupId) {
                         Text(
                             text = group.groupTitle,
@@ -472,7 +478,6 @@ fun DrawerContent(
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
-                    // 组内会话标题
                     items(
                         count = group.sessions.size,
                         key = {
@@ -501,6 +506,7 @@ fun DrawerContent(
             }
         }
 
+        // 抽屉底部固定展示当前身份信息，并提供设置或登录入口。
         if (isGuest) {
             Row(
                 modifier = Modifier

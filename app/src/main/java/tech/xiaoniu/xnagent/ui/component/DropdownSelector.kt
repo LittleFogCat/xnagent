@@ -28,7 +28,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * 模型选择下拉组件
+ * 通用下拉选择器。
+ *
+ * 当前主要用于模型切换，但组件本身与具体业务类型无关。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +50,7 @@ fun <T> DropdownSelector(
         onExpandedChange = { expanded = it },
         modifier = modifier.fillMaxSize(),
     ) {
+        // 锚点区域由外部 child 决定当前展示内容，右侧统一复用 Material3 展开箭头。
         Row(
             modifier = Modifier
                 .menuAnchor(
@@ -85,6 +88,7 @@ fun <T> DropdownSelector(
             matchAnchorWidth = false,
         ) {
             items.forEach { item ->
+                // 选中某项后立即回调并关闭下拉菜单。
                 DropdownMenuItem(
                     text = {
                         Text(

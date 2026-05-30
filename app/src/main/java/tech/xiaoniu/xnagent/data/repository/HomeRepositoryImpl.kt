@@ -38,8 +38,12 @@ import java.util.UUID
 import javax.inject.Inject
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * 主页数据仓库实现。
+ *
+ * 同时负责三类数据来源：
+ * 1. 模型、智能体、聊天 CRUD 等远端接口；
+ * 2. SSE 流式聊天响应解析；
+ * 3. 本地 Room 会话缓存，以及登录后向远端的同步。
  */
 class HomeRepositoryImpl @Inject constructor(
     @ApplicationContext context: Context,
@@ -52,6 +56,7 @@ class HomeRepositoryImpl @Inject constructor(
 
     private val appContext: Context = context
 
+    /** 从 assets 读取本地模型配置，作为服务端列表不可用时的兜底。 */
     override fun loadModelConfig() = flow {
         val modelConfig = appContext.assets
             .open("model_config.json")
@@ -89,10 +94,11 @@ class HomeRepositoryImpl @Inject constructor(
                         when {
                             line.startsWith(":") -> {
                                 Log.d(TAG, "Received SSE comment: $line")
-                                // do nothing
+                                // SSE 心跳或注释行，无需进入业务解析。
                             }
 
                             line.trim() == "data: [DONE]" -> {
+                                // 显式终态标记，表示服务端已经结束推流。
                                 Log.d(TAG, "Stream completed")
                                 break
                             }
@@ -104,6 +110,7 @@ class HomeRepositoryImpl @Inject constructor(
                                     val chunk = json.decodeFromString(SseChunk.serializer(), data)
                                     chunk
                                 }.onSuccess { chunk ->
+                                    // 服务端把 reasoning 和正文拆成两类片段，UI 层会分别累积显示。
                                     if (chunk.reasoningContent != null) {
                                         emit(SendToLLMResult.Thinking(chunk.reasoningContent))
                                     } else if (chunk.content != null) {
@@ -173,6 +180,7 @@ class HomeRepositoryImpl @Inject constructor(
         if (useRemote) {
             chatApi.getCurrentChat().chat?.toStoredChat()
         } else {
+            // 本地模式下默认取最近一条会话作为“当前会话”。
             val session = chatDao.getSessionList().firstOrNull() ?: return@withContext null
             session.toStoredChat(chatDao.getChatMessagesBySessionId(session.id))
         }
@@ -193,6 +201,7 @@ class HomeRepositoryImpl @Inject constructor(
         messages: List<ChatMessage>,
         useRemote: Boolean,
     ): StoredChat = withContext(Dispatchers.IO) {
+        // 会话标题始终由首条用户消息推导，保证本地和远端展示一致。
         val title = buildChatTitle(messages)
         if (useRemote) {
             val requestMessages = messages.map { it.toChatMessageDto() }
@@ -218,6 +227,7 @@ class HomeRepositoryImpl @Inject constructor(
         } else {
             val now = System.currentTimeMillis()
             val localSessionId = sessionId ?: UUID.randomUUID().toString()
+            // replaceSessionMessages 会整体替换该会话消息，适合编辑/重生后的截断重写。
             val session = Session(
                 id = localSessionId,
                 title = title,
@@ -244,6 +254,7 @@ class HomeRepositoryImpl @Inject constructor(
             runCatching {
                 val messages = chatDao.getChatMessagesBySessionId(session.id)
                 if (messages.isNotEmpty()) {
+                    // 只有存在消息内容时才创建远端会话，避免产生空聊天壳。
                     chatApi.createChat(
                         CreateChatRequest(
                             title = session.title,
@@ -252,6 +263,7 @@ class HomeRepositoryImpl @Inject constructor(
                         )
                     )
                 }
+                // 同步成功后删除本地副本，避免后续重复上传。
                 chatDao.deleteChatMessagesBySessionId(session.id)
                 chatDao.deleteSession(session.id)
             }.onFailure {
@@ -265,6 +277,7 @@ class HomeRepositoryImpl @Inject constructor(
         chatDao.clearSessions()
     }
 
+    /** 把远端聊天 DTO 转成界面统一使用的存储模型。 */
     private fun ChatDto.toStoredChat(): StoredChat {
         val remoteMessages = messages.orEmpty().mapIndexed { index, message ->
             message.toUiChatMessage(
@@ -281,6 +294,7 @@ class HomeRepositoryImpl @Inject constructor(
         )
     }
 
+    /** 把本地 Session 与消息列表拼装为统一的存储模型。 */
     private fun Session.toStoredChat(messages: List<LocalChatMessage>): StoredChat {
         return StoredChat(
             sessionId = id,
@@ -291,6 +305,7 @@ class HomeRepositoryImpl @Inject constructor(
         )
     }
 
+    /** 把 UI 消息转成 Room 实体，保证本地会话落盘时 ID 稳定可追踪。 */
     private fun ChatMessage.toLocalEntity(sessionId: String, fallbackIndex: Int): LocalChatMessage {
         val localId = id.ifBlank { "$sessionId-$fallbackIndex-${UUID.randomUUID()}" }
         return LocalChatMessage(
@@ -304,6 +319,7 @@ class HomeRepositoryImpl @Inject constructor(
         )
     }
 
+    /** 把本地数据库消息恢复成界面消息模型。 */
     private fun LocalChatMessage.toUiChatMessage(): ChatMessage {
         return ChatMessage(
             id = id,
@@ -315,6 +331,7 @@ class HomeRepositoryImpl @Inject constructor(
         )
     }
 
+    /** 远端聊天更新接口只接收基础 role/content，这里做最小投影。 */
     private fun LocalChatMessage.toChatMessageDto(): ChatMessageDto {
         return ChatMessageDto(
             role = role,
@@ -322,6 +339,7 @@ class HomeRepositoryImpl @Inject constructor(
         )
     }
 
+    /** 为远端消息生成稳定的临时 ID，方便 UI 列表 diff。 */
     private fun ChatMessageDto.toUiChatMessage(sessionId: String, fallbackIndex: Int): ChatMessage {
         return ChatMessage(
             id = "$sessionId-$fallbackIndex-${role.hashCode()}-${content.hashCode()}",
@@ -330,6 +348,7 @@ class HomeRepositoryImpl @Inject constructor(
         )
     }
 
+    /** 将界面角色枚举映射到接口约定的 role 字符串。 */
     private fun MessageRole.toApiRole(): String {
         return when (this) {
             MessageRole.SYSTEM -> "system"
@@ -338,6 +357,7 @@ class HomeRepositoryImpl @Inject constructor(
         }
     }
 
+    /** 将远端或本地持久化的 role 字符串恢复成界面枚举。 */
     private fun String.toMessageRole(): MessageRole {
         return when (lowercase()) {
             "system" -> MessageRole.SYSTEM
@@ -346,6 +366,7 @@ class HomeRepositoryImpl @Inject constructor(
         }
     }
 
+    /** 根据首条用户消息生成会话标题，过长时截断。 */
     private fun buildChatTitle(messages: List<ChatMessage>): String {
         val firstUserMessage = messages.firstOrNull { it.role == MessageRole.USER }
             ?.content

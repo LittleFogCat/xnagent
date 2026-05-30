@@ -33,6 +33,7 @@ data class SettingsUiState(
     val isClearingLocalData: Boolean = false,
 )
 
+/** 设置页状态管理，负责公开智能体、收藏列表和本地清理操作。 */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
@@ -40,6 +41,8 @@ class SettingsViewModel @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
+
+    /** 设置页唯一状态源，聚合智能体、收藏和本地清理提示。 */
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
@@ -48,9 +51,11 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(favorites = favorites) }
             }
         }
+        // 智能体列表不依赖用户交互，页面初始化时即拉取一次。
         refreshAgents()
     }
 
+    /** 刷新可添加到会话的智能体列表。 */
     fun refreshAgents() {
         viewModelScope.launch {
             homeRepository.getAgents().catch {
@@ -75,6 +80,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 将公开智能体创建成一条新的聊天会话。
+     *
+     * 这里会先推导默认模型，再调用创建聊天接口，成功后把条目标记为已添加。
+     */
     fun addAgentToChat(agentId: String) {
         val agent = _uiState.value.agents.firstOrNull { it.id == agentId } ?: return
         viewModelScope.launch {
@@ -109,12 +119,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** 从收藏列表中移除指定消息。 */
     fun removeFavorite(id: String) {
         viewModelScope.launch {
             favoriteRepository.removeFavorite(id)
         }
     }
 
+    /**
+     * 清除本地缓存数据并退出登录。
+     *
+     * 远端聊天记录不受影响，因此这里只重置本地数据库、收藏和认证态。
+     */
     fun clearLocalData() {
         if (_uiState.value.isClearingLocalData) return
 

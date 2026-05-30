@@ -16,11 +16,10 @@ import java.util.TreeSet
 import java.util.concurrent.TimeUnit
 
 /**
- * An OkHttp interceptor which logs request and response information. Can be applied as an
- * [application interceptor][OkHttpClient.interceptors] or as a [OkHttpClient.networkInterceptors].
+ * 适配流式响应的 OkHttp 日志拦截器。
  *
- * The format of the logs created by this class should not be considered stable and may
- * change slightly between releases. If you need a stable logging format, use your own interceptor.
+ * 它基于常规日志拦截器改造而来，核心差异是不会为了打印 BODY 而主动把整个响应体一次性读完，
+ * 这样 SSE 调用方仍然可以继续按流式方式消费响应内容。
  */
 class HttpStreamingLoggingInterceptor @JvmOverloads constructor(
     private val logger: Logger = Logger.DEFAULT
@@ -230,7 +229,7 @@ class HttpStreamingLoggingInterceptor @JvmOverloads constructor(
                 logger.log("<-- END HTTP (encoded body omitted)")
             } else {
                 val source = responseBody.source()
-//                source.request(Long.MAX_VALUE) // Buffer the entire body.
+                // 不能像常规日志拦截器那样 request(Long.MAX_VALUE)，否则会破坏 SSE 流式读取。
                 var buffer = source.buffer
 
                 var gzippedLength: Long? = null
@@ -279,6 +278,7 @@ class HttpStreamingLoggingInterceptor @JvmOverloads constructor(
     }
 }
 
+/** 粗略判断当前 buffer 是否看起来像 UTF-8 文本。 */
 internal fun Buffer.isProbablyUtf8(): Boolean {
     try {
         val prefix = Buffer()

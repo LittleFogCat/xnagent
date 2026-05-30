@@ -1,9 +1,9 @@
 package tech.xiaoniu.xnagent.data.local.network
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * 网络配置。
  */
 object NetworkConfig {
-        const val BASE_URL = "https://xiaoniu.tech/"
+    /** 服务端基础地址。 */
+    const val BASE_URL = "https://xiaoniu.tech/"
 }

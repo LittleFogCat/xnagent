@@ -15,5 +15,6 @@ import tech.xiaoniu.xnagent.data.local.entity.Session
     exportSchema = false,
 )
 abstract class XNDatabase : RoomDatabase() {
+    /** 当前应用唯一使用的聊天 DAO。 */
     abstract fun chatDao(): ChatDao
 }

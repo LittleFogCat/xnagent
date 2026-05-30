@@ -17,13 +17,15 @@ import kotlin.random.Random
 import javax.inject.Inject
 
 /**
- * 登录/注册页状态。
+ * 登录/注册页状态管理。
  */
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
+
+    /** 登录/注册页唯一状态源，包含表单输入、校验错误和提交状态。 */
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     companion object {
@@ -31,6 +33,7 @@ class LoginViewModel @Inject constructor(
         private const val LOGIN_CAPTCHA_LENGTH = 5
     }
 
+    /** 统一处理页面上的输入事件、模式切换与提交动作。 */
     fun dispatch(intent: LoginIntent) {
         when(intent) {
             is LoginIntent.UpdateEmail -> updateEmail(intent.email)
@@ -99,6 +102,7 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 切换登录/注册模式，并准备目标模式所需的验证码状态。 */
     fun toggleMode() {
         val nextIsRegisterMode = !_uiState.value.isRegisterMode
         _uiState.update {
@@ -115,6 +119,7 @@ class LoginViewModel @Inject constructor(
                 errorMessage = null,
             )
         }
+        // 注册模式需要远端题目；登录模式只在触发保护后才展示本地图形验证码。
         if (nextIsRegisterMode) {
             refreshRegisterCaptcha()
         } else if (_uiState.value.loginCaptchaRequired && _uiState.value.loginCaptchaValue.isBlank()) {
@@ -122,6 +127,7 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 根据当前模式刷新对应的人机验证题目。 */
     fun refreshCaptcha() {
         if (_uiState.value.isRegisterMode) {
             refreshRegisterCaptcha()
@@ -130,6 +136,7 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 向服务端请求注册题目，并重置注册阶段的人机验证输入。 */
     private fun refreshRegisterCaptcha() {
         if (_uiState.value.isSubmitting) return
         viewModelScope.launch {
@@ -164,6 +171,7 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 生成登录失败保护使用的本地图形验证码。 */
     private fun refreshLoginCaptcha() {
         if (_uiState.value.isSubmitting || !_uiState.value.loginCaptchaRequired) return
         _uiState.update {
@@ -177,8 +185,10 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 执行登录流程，并在连续失败时逐步升级为带图形验证码的保护模式。 */
     fun login() {
         val state = _uiState.value
+        // 先同步执行本地校验，减少无效网络请求并及时反馈具体字段错误。
         val emailError = validateEmail(state.email)
         val passwordError = validatePassword(state.password, requireStrongPassword = false)
         val loginCaptchaValidation = if (state.loginCaptchaRequired) {
@@ -239,6 +249,7 @@ class LoginViewModel @Inject constructor(
                 _uiState.update {
                     when {
                         error is HttpException && error.code() == 401 -> {
+                            // 连续失败达到阈值后开启图形验证码，降低撞库和暴力尝试风险。
                             val nextFailedAttempts = it.loginFailedAttempts + 1
                             val shouldRequireCaptcha = nextFailedAttempts >= LOGIN_CAPTCHA_TRIGGER_COUNT
                             it.copy(
@@ -284,6 +295,7 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 提交注册第一步，校验邮箱/密码/题目答案并发送邮箱验证码。 */
     fun requestRegisterCode() {
         val state = _uiState.value
         val emailError = validateEmail(state.email)
@@ -368,8 +380,10 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 提交注册第二步，校验邮箱验证码并在成功后建立登录态。 */
     fun completeRegister() {
         val state = _uiState.value
+        // 完成注册阶段只验证邮箱与验证码，密码强度已在上一步校验通过。
         val emailError = validateEmail(state.email)
         val verificationCodeError = validateVerificationCode(state.verificationCode)
         if (emailError != null || verificationCodeError != null) {
@@ -426,6 +440,7 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** 以游客身份进入首页，跳过账号体系但保留统一的提交流程。 */
     fun continueAsGuest() {
         if (_uiState.value.isSubmitting) return
         viewModelScope.launch {
@@ -492,6 +507,7 @@ class LoginViewModel @Inject constructor(
         expectedValue: String,
         answer: String,
     ): CaptchaValidationResult {
+        // 登录验证码错误时同时要求刷新题目和清空输入，避免旧题继续提交。
         return when {
             expectedValue.isBlank() -> CaptchaValidationResult(
                 errorMessage = "验证码已失效，请刷新后重试",

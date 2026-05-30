@@ -40,6 +40,8 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
     private val tag = javaClass.simpleName
     private val _uiState = MutableStateFlow(HomeUiState())
+
+    /** 主页唯一状态源，界面上的会话、输入和消息流都从这里派生。 */
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var initialized = false
@@ -48,6 +50,9 @@ class HomeViewModel @Inject constructor(
         const val GUEST_USER_MESSAGE_LIMIT = 10
     }
 
+    /**
+     * 主页统一意图分发入口，负责把 UI 事件路由到对应的状态变更或异步任务。
+     */
     fun dispatch(intent: HomeIntent) {
         when (intent) {
             HomeIntent.Initialize -> initialize()
@@ -74,7 +79,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 完成首页首次初始化。
+     *
+     * 首次进入时注册模型、认证态和收藏监听；后续只在已登录场景补拉远端会话。
+     */
     private fun initialize() {
+        // 首次进入时只注册一次观察者；后续回到页面只补一次远端会话刷新。
         if (initialized) {
             if (authRepository.session.value.isLoggedIn) {
                 refreshRemoteSessions()
@@ -87,6 +98,7 @@ class HomeViewModel @Inject constructor(
         observeFavorites()
     }
 
+    /** 监听可用模型列表，并尽量保持当前会话的模型选择不被刷新覆盖。 */
     private fun observeModels() {
         viewModelScope.launch {
             homeRepository.getModels().catch {
@@ -97,6 +109,7 @@ class HomeViewModel @Inject constructor(
                 }
                 if (modelUiModels.isEmpty()) return@collect
 
+                // 优先维持当前会话已选模型，其次退回服务端默认模型，避免刷新后模型跳变。
                 val preferredModelId = _uiState.value.currentSessionModelId
                 val defaultModel = response.defaultModel?.let { defaultId ->
                     modelUiModels.find { it.id == defaultId || it.fullId == defaultId }
@@ -115,9 +128,11 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 监听认证态变化，切换本地/远端会话源并同步侧边栏身份信息。 */
     private fun observeAuthState() {
         viewModelScope.launch {
             authRepository.session.collectLatest { session ->
+                // 认证态变化时同步更新侧边栏展示信息，并重新计算游客发送次数限制。
                 _uiState.update {
                     it.copy(
                         isLoggedIn = session.isLoggedIn,
@@ -138,6 +153,7 @@ class HomeViewModel @Inject constructor(
                 }
 
                 if (session.isLoggedIn) {
+                    // 登录后先尝试把游客/离线聊天补传到远端，再以远端会话列表为准。
                     runCatching {
                         homeRepository.syncLocalChatsToRemote()
                     }.onFailure {
@@ -145,6 +161,7 @@ class HomeViewModel @Inject constructor(
                     }
                     refreshRemoteSessions()
                 } else {
+                    // 游客模式下直接订阅本地数据库中的会话列表。
                     homeRepository.sessions.collect { sessions ->
                         applySessionList(sessions.map { it.toSessionUiModel() })
                     }
@@ -153,6 +170,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 同步收藏 ID 集合，供消息列表直接判断是否已收藏。 */
     private fun observeFavorites() {
         viewModelScope.launch {
             favoriteRepository.favorites.collectLatest { favorites ->
@@ -163,6 +181,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 从服务端刷新会话列表，并映射成侧边栏所需的 UI 模型。 */
     private fun refreshRemoteSessions() {
         viewModelScope.launch {
             homeRepository.getChats().catch {
@@ -181,7 +200,9 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 将新的会话列表应用到状态中，并尽量保留当前选中的会话。 */
     private fun applySessionList(sessions: List<SessionUiModel>) {
+        // 会话列表刷新时尽量保留用户当前选中项，只有找不到时才回退到第一条。
         val currentSessionId = _uiState.value.currentSessionId
         val nextSessionId = when {
             currentSessionId != null && sessions.any { it.id == currentSessionId } -> currentSessionId
@@ -206,6 +227,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 按当前登录态读取指定会话内容，并同步选中项、模型和消息列表。 */
     private fun loadSession(sessionId: String) {
         viewModelScope.launch {
             runCatching {
@@ -222,6 +244,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 清空当前上下文，进入一条尚未发送的新会话。 */
     private fun startNewChat() {
         _uiState.update { state ->
             state.copy(
@@ -232,10 +255,12 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 将输入框中的文本转换成一条新用户消息，并启动一次完整对话流。 */
     private fun sendNewMessage() {
         val text = _uiState.value.inputText.trim()
         if (text.isBlank() || _uiState.value.isGuestMessageLimitReached) return
 
+        // 先把用户消息乐观写入本地状态，随后统一走 sendConversation 持久化并请求模型。
         val userMessage = ChatMessage(
             id = UUID.randomUUID().toString(),
             role = MessageRole.USER,
@@ -250,10 +275,12 @@ class HomeViewModel @Inject constructor(
         sendConversation(baseMessages)
     }
 
+    /** 编辑历史用户消息后，从该消息处截断上下文并重新生成后续回答。 */
     private fun editUserMessage(messageId: String, content: String) {
         val updatedContent = content.trim()
         if (updatedContent.isBlank()) return
 
+        // 编辑历史用户消息时，后续上下文已失效，因此从该消息开始截断并重新生成回答。
         val currentMessages = _uiState.value.messages
         val targetIndex = currentMessages.indexOfFirst {
             it.id == messageId && it.role == MessageRole.USER
@@ -269,6 +296,7 @@ class HomeViewModel @Inject constructor(
         sendConversation(baseMessages)
     }
 
+    /** 重新生成指定助手消息，并保留它之前最近一条用户消息及其上下文。 */
     private fun regenerateAssistantMessage(messageId: String) {
         val currentMessages = _uiState.value.messages
         val assistantIndex = currentMessages.indexOfFirst {
@@ -280,11 +308,13 @@ class HomeViewModel @Inject constructor(
             currentMessages[it].role == MessageRole.USER
         } ?: return
 
+        // 重新生成时保留“上一条用户消息及其之前的上下文”，移除旧回答后重新请求。
         val baseMessages = currentMessages.take(userIndex + 1)
         _uiState.update { it.withConversation(baseMessages) }
         sendConversation(baseMessages)
     }
 
+    /** 删除指定消息，并将更新后的会话内容重新持久化。 */
     private fun deleteMessage(messageId: String) {
         val currentMessages = _uiState.value.messages
         if (currentMessages.none { it.id == messageId }) return
@@ -293,6 +323,7 @@ class HomeViewModel @Inject constructor(
         persistConversation(updatedMessages)
     }
 
+    /** 将指定消息加入收藏，并补齐会话标题等展示所需元信息。 */
     private fun favoriteMessage(messageId: String) {
         val state = _uiState.value
         if (state.favoriteMessageIds.contains(messageId)) return
@@ -316,6 +347,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 将当前会话内容持久化到本地或远端，并回写仓库规范化后的会话状态。 */
     private fun persistConversation(messages: List<ChatMessage>) {
         val currentModel = _uiState.value.currentModel
         if (currentModel == null) {
@@ -347,11 +379,17 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 保存当前上下文并发起一次完整的流式对话请求。
+     *
+     * 该流程会先落盘用户侧消息，再把 SSE 返回的思考片段和正文片段折叠成同一条助手消息。
+     */
     private fun sendConversation(baseMessages: List<ChatMessage>) {
         val currentModel = _uiState.value.currentModel ?: return
         val useRemote = authRepository.session.value.isLoggedIn
 
         viewModelScope.launch {
+            // 先保存用户侧消息，确保刷新或切后台后仍能恢复到“待回复”状态。
             val savedBaseChat = runCatching {
                 homeRepository.saveStoredChat(
                     sessionId = _uiState.value.currentSessionId,
@@ -385,6 +423,7 @@ class HomeViewModel @Inject constructor(
             var isThinking = false
             var isGenerating = false
 
+            // 将 SSE 中“思考中”和“正文生成中”两段状态折叠成一条可持续刷新的助手消息。
             fun buildAssistantMessage(): ChatMessage {
                 val thinkingDurationMs = thinkingStartedAtMs?.let { startedAt ->
                     if (accumulatedReasoning.isBlank()) {
@@ -405,6 +444,7 @@ class HomeViewModel @Inject constructor(
                 )
             }
 
+            // 每次流式片段到达时都就地更新最后一条助手消息，避免消息列表不断新增占位项。
             fun upsertAssistantMessage() {
                 if (assistantMessageId == null) {
                     assistantMessageId = UUID.randomUUID().toString()
@@ -422,6 +462,7 @@ class HomeViewModel @Inject constructor(
                 when (result) {
                     is SendToLLMResult.Thinking -> {
                         Log.d(tag, "sendToLLM: ${currentTimeF()} thinking...: ${result.content}")
+                        // reasoning 片段用于展示“思考过程”，正文尚未开始生成。
                         if (thinkingStartedAtMs == null) {
                             thinkingStartedAtMs = System.currentTimeMillis()
                         }
@@ -433,6 +474,7 @@ class HomeViewModel @Inject constructor(
 
                     is SendToLLMResult.Streaming -> {
                         Log.d(tag, "sendToLLM: ${currentTimeF()} streaming...: ${result.content}")
+                        // 正文流到来后关闭 thinking 标记，但仍保持 generating 直到流结束。
                         accumulatedContent += result.content
                         isThinking = false
                         isGenerating = true
@@ -456,6 +498,7 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
+            // 某些服务端流可能没有显式终态事件，这里做一次兜底收尾。
             if (assistantMessageId != null && (isThinking || isGenerating)) {
                 isThinking = false
                 isGenerating = false
@@ -481,6 +524,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 使用仓库返回的会话快照统一刷新当前会话 ID、模型选择和消息列表。 */
     private fun applyStoredChat(storedChat: StoredChat, messagesOverride: List<ChatMessage>? = null) {
         val selectedModel = findModel(storedChat.modelId)
         _uiState.update { state ->
@@ -521,6 +565,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun HomeUiState.withConversation(messages: List<ChatMessage>): HomeUiState {
+        // 游客发送次数属于派生状态，每次消息列表变化时统一回算，避免多个入口各自维护。
         val userMessageCount = messages.count { it.role == MessageRole.USER }
         return copy(
             messages = messages,

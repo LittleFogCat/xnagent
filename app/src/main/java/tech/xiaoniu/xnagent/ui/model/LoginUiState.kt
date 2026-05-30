@@ -1,5 +1,10 @@
 package tech.xiaoniu.xnagent.ui.model
 
+/**
+ * 登录/注册页面状态。
+ *
+ * 同时覆盖登录、注册、图形验证码、人机验证和邮箱验证码流程。
+ */
 data class LoginUiState(
     val isRegisterMode: Boolean = false,
     val email: String = "",
@@ -17,6 +22,7 @@ data class LoginUiState(
     val captchaAnswerError: String? = null,
     val verificationCode: String = "",
     val verificationCodeError: String? = null,
+    /** 是否已请求发送邮箱验证码。 */
     val codeRequested: Boolean = false,
     val isSubmitting: Boolean = false,
     val noticeMessage: String? = null,

@@ -1,10 +1,5 @@
 package tech.xiaoniu.xnagent.data.remote.api
 
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.http.Body
@@ -23,17 +18,27 @@ import tech.xiaoniu.xnagent.data.remote.dto.CurrentChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.DeleteChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ModelsResponse
 import tech.xiaoniu.xnagent.data.remote.dto.UpdateChatRequest
-import java.util.concurrent.TimeUnit
 
-/** Retrofit interface for chat endpoints */
+/**
+ * 普通聊天接口。
+ *
+ * 覆盖模型列表、智能体列表以及聊天记录的增删改查。
+ */
 interface ChatApi {
 
+    /**
+     * 发送一次非流式聊天请求。
+     *
+     * 当前仓库主要使用 [StreamChatApi] 走流式接口，这里保留给普通 HTTP 响应场景。
+     */
     @POST("/api/chat")
     suspend fun chat(@Body request: ChatRequest): ResponseBody
 
+    /** 获取可用模型列表及默认模型。 */
     @GET("/api/chat/models")
     suspend fun getModels(): ModelsResponse
 
+    /** 获取公开智能体列表。 */
     @GET("/api/chat/agents")
     suspend fun getAgents(): AgentsResponse
 
@@ -63,5 +68,4 @@ interface ChatApi {
     /** 删除当前用户的一条聊天记录 */
     @DELETE("/api/chats/{id}")
     suspend fun deleteChat(@Path("id") id: String): DeleteChatResponse
-
 }

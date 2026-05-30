@@ -1,8 +1,9 @@
 package tech.xiaoniu.xnagent.ui.model
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * 流式聊天结果。
+ *
+ * SSE 解析后会被归一为“推理中”“正文流”“完成”“错误”四种事件。
  */
 sealed class SendToLLMResult {
     data class Thinking(val content: String) : SendToLLMResult()

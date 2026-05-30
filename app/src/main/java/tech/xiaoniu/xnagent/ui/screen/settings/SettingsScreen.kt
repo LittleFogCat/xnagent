@@ -54,6 +54,7 @@ private enum class SettingsSection {
     FAVORITES,
 }
 
+/** 设置页，按用户信息、智能体、收藏和数据管理几个区域组织。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -98,6 +99,7 @@ fun SettingsScreen(
                 .background(Color.White)
                 .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
+            // 顶部用户信息区展示头像、昵称和邮箱。
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -123,6 +125,7 @@ fun SettingsScreen(
                 }
             }
 
+            // 智能体区用于查看公开智能体，并将其快速加入聊天列表。
             SettingsRow(
                 icon = Icons.Outlined.Hub,
                 title = "智能体",
@@ -153,6 +156,7 @@ fun SettingsScreen(
                 }
             }
 
+            // 收藏区集中展示已收藏消息，并支持直接移除。
             SettingsRow(
                 icon = Icons.Outlined.BookmarkBorder,
                 title = "我的收藏",
@@ -183,6 +187,7 @@ fun SettingsScreen(
                 }
             }
 
+            // 数据管理区提供本地清理和账号入口，都是设置页的操作性区域。
             SettingsRow(
                 icon = Icons.Outlined.DeleteOutline,
                 title = "清除本地数据",
@@ -202,6 +207,7 @@ fun SettingsScreen(
                 onClick = onBackToLogin,
             )
 
+            // 底部区域用于反馈一次性操作结果，并展示当前版本号。
             if (!noticeMessage.isNullOrBlank()) {
                 Text(
                     text = noticeMessage,
@@ -220,6 +226,7 @@ fun SettingsScreen(
             )
         }
 
+        // 清理本地数据属于不可逆操作，需要额外确认。
         if (showClearLocalDataDialog) {
             AlertDialog(
                 onDismissRequest = { showClearLocalDataDialog = false },

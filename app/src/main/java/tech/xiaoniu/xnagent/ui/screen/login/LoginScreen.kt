@@ -96,6 +96,7 @@ fun LoginScreen(
     )
 }
 
+/** 登录/注册页的纯 UI 实现，按装饰背景、表单卡片和状态提示分区组织。 */
 @Composable
 fun LoginContent(
     modifier: Modifier = Modifier,
@@ -122,6 +123,7 @@ fun LoginContent(
         unfocusedLabelColor = secondaryText,
     )
 
+    // 顶部渐变和装饰圆形只负责建立视觉层次，不参与交互。
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -155,6 +157,7 @@ fun LoginContent(
                 .background(Color(0x40FFFFFF))
         )
 
+            // 主内容区按“导航行、品牌头部、表单卡片、状态提示”自上而下排列。
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -164,6 +167,7 @@ fun LoginContent(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            // 顶部导航区提供返回入口和游客登录快捷操作。
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -201,6 +205,7 @@ fun LoginContent(
                 }
             }
 
+            // 品牌头部根据当前模式展示欢迎语和能力说明。
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -240,6 +245,7 @@ fun LoginContent(
                 )
             }
 
+            // 核心表单区根据登录/注册模式切换不同字段和提交流程。
             Card(
                 shape = RoundedCornerShape(30.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -253,6 +259,7 @@ fun LoginContent(
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    // 模式切换放在表单顶部，便于在登录和注册间快速切换。
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -313,6 +320,7 @@ fun LoginContent(
                         colors = fieldColors,
                     )
 
+                    // 登录保护触发后补充本地图形验证码，避免继续无成本重试。
                     if (!uiState.isRegisterMode && uiState.loginCaptchaRequired) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
@@ -353,6 +361,7 @@ fun LoginContent(
                         }
                     }
 
+                    // 注册模式额外包含人机验证、邮箱验证码发送与最终确认。
                     if (uiState.isRegisterMode) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
@@ -395,6 +404,7 @@ fun LoginContent(
 
                         Button(
                             onClick = { onAction(LoginIntent.RequestRegisterCode) },
+                    // 统一在表单底部展示一次性提示、错误反馈和流程说明。
                             enabled = !uiState.isSubmitting,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(18.dp),
@@ -485,6 +495,7 @@ private fun Modifier.bringIntoViewOnFocus(): Modifier {
     val requester = remember { BringIntoViewRequester() }
     val coroutineScope = rememberCoroutineScope()
 
+    // 输入框聚焦后主动滚动到可视区，避免被软键盘遮挡。
     return this
         .bringIntoViewRequester(requester)
         .onFocusChanged { focusState ->
@@ -496,6 +507,7 @@ private fun Modifier.bringIntoViewOnFocus(): Modifier {
         }
 }
 
+/** 把文本验证码题目绘制成位图，避免被简单复制。 */
 @Composable
 private fun CaptchaQuestionImage(
     question: String,
@@ -520,6 +532,7 @@ private fun CaptchaQuestionImage(
     )
 }
 
+/** 生成带干扰线和随机形变的验证码位图。 */
 private fun createCaptchaBitmap(
     question: String,
     widthPx: Int,
@@ -636,6 +649,7 @@ private fun RowScope.LoginModeTab(
     }
 }
 
+/** 统一展示成功提示或错误提示。 */
 @Composable
 private fun StatusMessage(
     text: String,

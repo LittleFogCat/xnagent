@@ -11,8 +11,9 @@ import tech.xiaoniu.xnagent.data.local.entity.ChatMessage
 import tech.xiaoniu.xnagent.data.local.entity.Session
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * 本地聊天数据访问接口。
+ *
+ * 负责会话列表查询、消息读写，以及“整会话替换”这类事务操作。
  */
 @Dao
 interface ChatDao {
@@ -49,6 +50,11 @@ interface ChatDao {
     @Query("DELETE FROM session")
     suspend fun clearSessions()
 
+    /**
+     * 事务性地重写某个会话及其全部消息。
+     *
+     * 适用于消息编辑、重新生成回答等需要“截断后整体回写”的场景。
+     */
     @Transaction
     suspend fun replaceSessionMessages(session: Session, messages: List<ChatMessage>) {
         upsertSession(session)

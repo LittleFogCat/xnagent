@@ -1,12 +1,8 @@
 package tech.xiaoniu.xnagent.ui.model
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
- */
-
-/**
  * 将会话列表按日期分组。
+ *
  * 分组包括：
  * - 今天
  * - 昨天

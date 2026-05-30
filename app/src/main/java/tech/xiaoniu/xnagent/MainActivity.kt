@@ -16,6 +16,11 @@ import tech.xiaoniu.xnagent.ui.screen.login.LoginScreen
 import tech.xiaoniu.xnagent.ui.screen.settings.SettingsScreen
 import tech.xiaoniu.xnagent.ui.theme.XNAgentTheme
 
+/**
+ * 应用唯一 Activity。
+ *
+ * 这里只做三件事：挂载 Compose、读取根导航状态，以及把不同页面的回调接回 MainViewModel。
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

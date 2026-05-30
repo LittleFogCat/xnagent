@@ -78,7 +78,9 @@ import tech.xiaoniu.xnagent.ui.model.MessageRole
 private const val REASONING_EXPAND_ANIMATION_DURATION_MS = 220
 
 /**
- * 单条聊天消息项
+ * 单条聊天消息项。
+ *
+ * 除了正文展示外，还负责长按菜单、复制、收藏、重新生成、选择文字和用户消息编辑。
  */
 @Composable
 fun ChatMessageItem(
@@ -389,6 +391,7 @@ private fun ReasoningSection(
     )
 
     if (message.isThinking) {
+        // reasoning 仍在持续追加时只显示“思考中”，避免用户误以为已经完整结束。
         Text(
             text = "思考中...",
             style = MaterialTheme.typography.bodySmall,
@@ -448,7 +451,10 @@ private fun buildReasoningSummary(reasoningDurationMs: Long?): String {
 }
 
 /**
- * 聊天消息列表
+ * 聊天消息列表。
+ *
+ * 采用 reverseLayout=true，让最新消息天然锚定在底部，同时单独维护“是否跟随底部”状态，
+ * 避免程序化滚动被误判成用户手势导致漏滚。
  */
 @Composable
 fun ChatMessageList(
@@ -473,6 +479,7 @@ fun ChatMessageList(
         }
     }
 
+    // 用户手动滚离底部后暂停自动跟底；程序化滚动期间不回写这个状态。
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress to isAtBottom }
             .distinctUntilChanged()
@@ -484,6 +491,7 @@ fun ChatMessageList(
             }
     }
 
+    // 等待最新 item 真正进入布局后再滚到底部，避免消息刚插入时滚动目标还不存在。
     suspend fun scrollLatestMessageToBottom() {
         if (displayMessages.isEmpty()) return
 
@@ -495,6 +503,7 @@ fun ChatMessageList(
 
     val latestMessage = messages.lastOrNull()
 
+    // 新消息到来且仍处于跟底状态时，自动把最新消息贴到底边。
     LaunchedEffect(latestMessage?.id, shouldFollowBottom) {
         if (latestMessage == null || !shouldFollowBottom) {
             return@LaunchedEffect
@@ -537,7 +546,7 @@ fun ChatMessageList(
 }
 
 /**
- * 空聊天状态占位
+ * 空聊天状态占位。
  */
 @Composable
 fun EmptyChatPlaceholder(modifier: Modifier = Modifier) {

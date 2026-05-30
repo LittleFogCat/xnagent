@@ -23,9 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/**
- * 聊天输入栏：输入框 + 发送按钮
- */
+/** 简化版聊天输入栏，可用于预览或简单场景。 */
 @Composable
 fun ChatInputBar(
     inputText: String,

@@ -13,12 +13,18 @@ data class ChatMessageDto(
     val content: String
 )
 
+/** 聊天目标，可指向某个智能体等附加上下文。 */
 @Serializable
 data class ChatTargetDto(
     val type: String,
     val id: String
 )
 
+/**
+ * 发给聊天接口的请求体。
+ *
+ * 同时覆盖普通聊天和流式聊天两种模式；当前应用默认开启 streaming。
+ */
 @Serializable
 @OptIn(ExperimentalSerializationApi::class)
 data class ChatRequest(
@@ -32,9 +38,9 @@ data class ChatRequest(
     val streaming: Boolean = true
 )
 
+/** 控制模型推理模式。 */
 @Serializable
 data class ThinkingConfig(val type: Type) {
-
     enum class Type {
         @SerialName("enabled")
         ENABLED,
@@ -44,6 +50,7 @@ data class ThinkingConfig(val type: Type) {
     }
 }
 
+/** 单个模型的展示信息。 */
 @Serializable
 data class ModelInfoDto(
     val id: String,
@@ -55,12 +62,14 @@ data class ModelInfoDto(
     val maxTokens: Int? = null
 )
 
+/** 模型列表响应。 */
 @Serializable
 data class ModelsResponse(
     val models: List<ModelInfoDto> = emptyList(),
     val defaultModel: String? = null
 )
 
+/** 单个智能体信息。 */
 @Serializable
 data class AgentInfoDto(
     val id: String,
@@ -71,6 +80,7 @@ data class AgentInfoDto(
     val free: Boolean = false
 )
 
+/** 智能体列表响应。 */
 @Serializable
 data class AgentsResponse(
     val identities: List<AgentInfoDto> = emptyList()
@@ -131,7 +141,11 @@ data class DeleteChatResponse(
     val success: Boolean
 )
 
-/** SSE 数据块 **/
+/**
+ * SSE 数据块。
+ *
+ * 服务端会把推理内容和正文拆成不同字段，客户端据此分别显示“思考中”和最终回答。
+ */
 @Serializable
 data class SseChunk(
     val content: String? = null,

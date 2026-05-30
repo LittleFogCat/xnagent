@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * 简单的用户头像占位。
+ *
+ * 从用户名或邮箱提取最多两个首字母，没有可用文本时回退为 XN。
  */
 @Composable
 fun UserAvatar(

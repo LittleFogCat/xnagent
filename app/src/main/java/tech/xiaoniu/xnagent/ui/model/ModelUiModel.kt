@@ -1,12 +1,10 @@
 package tech.xiaoniu.xnagent.ui.model
 
-import tech.xiaoniu.xnagent.data.Model
-
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * 模型 UI 结构。
+ *
+ * 由远端模型 DTO 转换而来，主要用于下拉展示和会话模型匹配。
  */
-/** Ui model for LLM model ([Model]) **/
 data class ModelUiModel(
     val id: String,
     val name: String,

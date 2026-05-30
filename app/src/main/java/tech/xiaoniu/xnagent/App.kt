@@ -35,8 +35,9 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * 应用入口。
+ *
+ * 负责初始化 Hilt，并在启动时打开协程调试信息，便于开发阶段排查异步问题。
  */
 @HiltAndroidApp
 class App : Application() {
@@ -46,6 +47,7 @@ class App : Application() {
     }
 }
 
+/** 应用级配置，目前主要用于区分是否开启网络日志。 */
 data class AppConfig(
     val isDebug: Boolean
 )
@@ -53,7 +55,6 @@ data class AppConfig(
 @Module
 @InstallIn(SingletonComponent::class)
 class AppModule {
-
     @Provides
     @Singleton
     fun provideFavoriteRepository(
@@ -78,6 +79,7 @@ class AppModule {
         chatDao: ChatDao,
     ): HomeRepository = HomeRepositoryImpl(context, json, streamChatApi, chatApi, chatDao)
 
+    /** 统一的 JSON 序列化配置，允许忽略服务端新增字段。 */
     @Provides
     @Singleton
     fun provideJson(): Json = Json {
@@ -96,6 +98,11 @@ class AppModule {
 @InstallIn(SingletonComponent::class)
 class NetworkModule {
 
+    /**
+     * 提供常规 HTTP 客户端。
+     *
+     * 自动附带 Bearer Token，并在 debug 模式下输出完整请求日志。
+     */
     @Provides
     @Singleton
     fun provideOkHttpClient(
@@ -134,6 +141,11 @@ class NetworkModule {
             .build()
     }
 
+    /**
+     * 提供 SSE 专用 Retrofit。
+     *
+     * 不能复用普通客户端，因为标准 BODY 日志会一次性读取完整响应体，破坏流式消费。
+     */
     @Provides
     @Singleton
     @OptIn(ExperimentalSerializationApi::class)

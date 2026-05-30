@@ -4,11 +4,14 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * @author littlefogcat
- * @email littlefogcat@foxmail.com
+ * Room 本地表实体。
  */
 
-/** 一次会话 **/
+/**
+ * 会话表。
+ *
+ * 只保存抽屉和恢复会话所需的摘要信息，消息正文单独存放在 chat_message 表。
+ */
 @Entity(tableName = "session")
 data class Session(
     @PrimaryKey val id: String,
@@ -18,7 +21,11 @@ data class Session(
     val updateTime: Long,
 )
 
-/** 一条聊天记录 **/
+/**
+ * 消息表。
+ *
+ * 以 sessionId 关联会话，按 createTime 正序还原聊天上下文。
+ */
 @Entity(tableName = "chat_message")
 data class ChatMessage(
     @PrimaryKey val id: String,
