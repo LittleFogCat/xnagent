@@ -37,6 +37,9 @@ data class HomeUiState(
     val viewerName: String = "",
 
     val viewerEmail: String = "",
+
+    /** 是否有请求正在等待或接收 SSE 响应。UI 据此禁用发送按钮、显示状态提示。 */
+    val isResponding: Boolean = false,
 )
 
 /** 侧边栏中的单个会话摘要。 */

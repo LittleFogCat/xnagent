@@ -5,6 +5,11 @@ import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -65,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -93,6 +99,12 @@ fun ChatMessageItem(
     isFavorited: Boolean = false,
 ) {
     val isUser = message.role == MessageRole.USER
+
+    // 生成中的 assistant 消息如果还没有任何内容（包括 reasoning），先不渲染气泡，由列表底部的 TypingIndicator 顶替。
+    if (!isUser && message.content.isBlank() && message.reasoningContent.isBlank() && (message.isThinking || message.isGenerating)) {
+        return
+    }
+
     val context = LocalContext.current
     val clipboardManager = remember(context) {
         context.getSystemService(ClipboardManager::class.java)
@@ -137,7 +149,8 @@ fun ChatMessageItem(
                 Column(
                     modifier = Modifier.padding(12.dp)
                 ) {
-                    if (!isUser && message.reasoningContent.isNotBlank()) {
+                    // 思考中的消息即使还没有 reasoning 片段，也要展示"思考中..."，避免用户误以为无响应。
+                    if (!isUser && (message.reasoningContent.isNotBlank() || message.isThinking)) {
                         ReasoningSection(
                             message = message,
                             expanded = reasoningExpanded,
@@ -443,7 +456,6 @@ private fun ReasoningSection(
         }
     }
 }
-
 private fun buildReasoningSummary(reasoningDurationMs: Long?): String {
     val seconds = ((reasoningDurationMs ?: 0L) + 999L) / 1000L
     val displaySeconds = if (seconds <= 0L) 1L else seconds
@@ -465,6 +477,7 @@ fun ChatMessageList(
     onDeleteMessage: (String) -> Unit = {},
     onFavoriteMessage: (String) -> Unit = {},
     favoritedMessageIds: Set<String> = emptySet(),
+    isResponding: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val displayMessages = remember(messages) { messages.asReversed() }
@@ -528,6 +541,18 @@ fun ChatMessageList(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
         ) {
+            // TypingIndicator 只在“还没有一个正在增长中的助手气泡”时出现。
+            // 一旦首帧 SSE 到达，气泡会代替圆点，避免视觉上同时看到两个“正在生成”提示。
+            val hasLiveAssistant = messages.any {
+                it.role == MessageRole.ASSISTANT &&
+                    (it.isThinking || it.isGenerating)
+            }
+            if (isResponding && !hasLiveAssistant) {
+                item(key = "typing_indicator") {
+                    TypingIndicator()
+                }
+            }
+            
             items(
                 items = displayMessages,
                 key = { it.id }
@@ -575,6 +600,54 @@ fun EmptyChatPlaceholder(modifier: Modifier = Modifier) {
                 text = "选择模式与模型，开始对话",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+/**
+ * 助手正在生成回复时，在聊天框底部、输入框上方显示的"打字机"指示器。
+ *
+ * 三个圆点循环上下浮动，模拟经典 AI chat 的加载动画。
+ */
+@Composable
+fun TypingIndicator(modifier: Modifier = Modifier) {
+    // 使用主题色而非 Color.Black，避免深色模式下亮度脱节；详见 design-system.md §6.6。
+    val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val transition = rememberInfiniteTransition(label = "typingDots")
+    val density = LocalDensity.current
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 三个点从左到右依次点亮，模拟文字打出方向。
+        repeat(3) { idx ->
+            val anim by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 1200
+                        0f at 0
+                        1f at (160 + idx * 160)
+                        0f at 1200
+                    },
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "typingDot_$idx",
+            )
+            Box(
+                modifier = Modifier
+                    .graphicsLayer { translationY = with(density) { (-4).dp.toPx() } * anim }
+                    .size(8.dp)
+                    .background(
+                        color = dotColor.copy(alpha = 0.35f + 0.55f * anim),
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    ),
             )
         }
     }

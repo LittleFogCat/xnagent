@@ -415,6 +415,11 @@ class HomeViewModel @Inject constructor(
                 ),
             )
 
+            // 标记进入请求中状态，UI 用来禁用发送按钮和展示状态提示。
+            // 放在 try 内以确保异常路径下也能被 finally 复位（与 isResponding = false 配对）。
+            try {
+                _uiState.update { it.copy(isResponding = true) }
+
             var conversation = baseMessages
             var assistantMessageId: String? = null
             var accumulatedContent = ""
@@ -520,6 +525,11 @@ class HomeViewModel @Inject constructor(
                 applyStoredChat(finalStoredChat, messagesOverride = conversation)
             } else if (useRemote) {
                 refreshRemoteSessions()
+            }
+
+            // 不管是流式结束、错误还是兜底收尾，结束前都要恢复 UI 状态。
+            } finally {
+                _uiState.update { it.copy(isResponding = false) }
             }
         }
     }

@@ -131,13 +131,17 @@ HomeViewModel.sendNewMessage
 HomeRepository.saveStoredChat（落盘用户消息 + 创建/更新会话）
               ↓
 HomeViewModel.sendConversation
-              ↓
-StreamChatApi.chat（@Streaming）  →  OkHttp 读取字节流
-              ↓
-HomeRepositoryImpl 解析 SSE 帧（reasoning / content）
-              ↓
-Flow<SendToLLMResult> → HomeViewModel 累积并刷新最后一条助手消息
+  ├─ try 内：_uiState.update { isResponding = true }
+  ├─ StreamChatApi.chat（@Streaming）  →  OkHttp 读取字节流
+  ├─ HomeRepositoryImpl 解析 SSE 帧（reasoning / content）
+  ├─ Flow<SendToLLMResult> → HomeViewModel 累积并刷新最后一条助手消息
+  └─ finally：_uiState.update { isResponding = false }
 ```
+
+`HomeUiState.isResponding` 表示「请求正在等待或接收 SSE 响应」，由 `sendConversation` 在 `try` 入口置 `true`，`finally` 中复位为 `false`，保证任何退出路径（`Success` / `Error` / 协程取消 / 兜底收尾）下 UI 都能解锁。UI 层据此：
+
+- 禁用输入区发送按钮（`HomeScreen`）；
+- 在 `ChatMessageList` 顶部插入 `TypingIndicator`（仅在没有正在增长的助手气泡时）。
 
 ### 收藏
 

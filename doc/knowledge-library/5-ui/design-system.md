@@ -127,6 +127,27 @@ XNAgent 使用 Material3 作为设计语言基础，叠加一组业务色与少�
 - 消息列表：`LazyColumn` + `key = message.id`，自动滚动到底部由 Composable 内 `LaunchedEffect` 监听长度变化；
 - 滚动条：长列表可考虑 `verticalScroll(rememberScrollState())`，但聊天列表统一使用 `LazyColumn`。
 
+### 6.6 Loading Indicator（TypingIndicator）
+
+用于 `ChatMessageList` 在助手正在生成回复、且气泡尚未出现时的占位提示。
+
+| Token | 取值 | 用途 |
+| --- | --- | --- |
+| 点颜色（基础） | `MaterialTheme.colorScheme.onSurfaceVariant` | 三个圆点的基础颜色，与其它次级文字保持一致 |
+| 点透明度（基础） | `0.45f` | 圆点静止时的透明度 |
+| 点透明度（动画峰值） | `0.90f` | 圆点在动画峰值（位移 -4dp 顶部）时的透明度 |
+
+动画：
+
+- 三个圆点使用 `rememberInfiniteTransition` + `keyframes` 形成上下浮动 + 透明度变化的波浪；
+- 持续时间 `1200ms`，三个点相位依次错开 `160ms`，**从左到右**依次点亮，模拟文字打出方向；
+- 动画运行期不要在 `LazyColumn` 上重复创建此组件，应用 `item(key = "typing_indicator")` 锚定单实例。
+
+可见性：
+
+- `TypingIndicator` 只在 `isResponding && !hasLiveAssistant` 时显示，避免与正在增长的助手气泡同时出现造成视觉冗余；
+- `hasLiveAssistant` 定义：消息列表中存在 `role == ASSISTANT && (isThinking || isGenerating)` 的项。
+
 ## 7. 动效
 
 - 消息项中思考过程展开：`expandVertically` / `shrinkVertically`，时长 220ms；

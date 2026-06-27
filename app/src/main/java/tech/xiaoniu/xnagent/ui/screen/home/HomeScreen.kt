@@ -285,6 +285,7 @@ fun HomeScreenContent(
                         onAction(HomeIntent.FavoriteMessage(it))
                     },
                     favoritedMessageIds = uiState.favoriteMessageIds,
+                    isResponding = uiState.isResponding,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -388,12 +389,12 @@ fun HomeScreenContent(
 
                             IconButton(
                                 onClick = {
-                                    if (uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached) {
+                                    if (uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached && !uiState.isResponding) {
                                         onAction(HomeIntent.SendMessage)
                                         keyboardController?.hide()
                                     }
                                 },
-                                enabled = uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached
+                                enabled = uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached && !uiState.isResponding
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
@@ -582,6 +583,7 @@ fun HomeScreenPreview() {
         uiState = HomeUiState(
             agentMode = AgentMode.entries.first(),
             inputText = "示例消息",
+            isResponding = true,
             currentModel = ModelUiModel(
                 "gpt-3.5-turbo",
                 "GPT-3.5 Turbo",
@@ -607,6 +609,20 @@ fun HomeScreenPreview() {
                     id = "3",
                     content = "我是一个由 OpenAI 训练的语言模型，旨在帮助用户  解答问题、提供信息和进行对话交流。",
                     role = MessageRole.ASSISTANT,
+                ),
+                ChatMessage(
+                    id = "4",
+                    content = "",
+                    role = MessageRole.ASSISTANT,
+                    isGenerating = true,
+                ),
+                ChatMessage(
+                    id = "5",
+                    content = "",
+                    role = MessageRole.ASSISTANT,
+                    reasoningContent = "",
+                    isThinking = true,
+                    isGenerating = true,
                 )
             ),
             sessions = System.currentTimeMillis().let { now ->
