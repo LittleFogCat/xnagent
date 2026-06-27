@@ -14,7 +14,7 @@
 | `minSdk` | 24 | Android 7.0 |
 | Java 源码 / 字节码 | **11** | 不是 21 |
 | `buildConfig` | 启用 | `buildFeatures { buildConfig = true }` |
-| 仓库镜像 | Aliyun | `settings.gradle.kts:20` 起生效，加快国内访问 |
+| 仓库镜像 | CI：官方源；本地：Aliyun | 根据 `CI` 环境变量自动切换；CI 用 `google()` + `mavenCentral()` 官方源规避阿里云 502 故障，本地用阿里云镜像加速 |
 
 ## 主要依赖
 
