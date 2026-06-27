@@ -1,26 +1,49 @@
 # Git 规范
 
+> 本规范对 AI 与人类开发者统一执行。来源：[`doc/.ai/dev/git_convention_improve.md`](../../.ai/dev/git_convention_improve.md)
+
 ## 1. 分支策略
 
-采用简化版 Git Flow：
+采用轻量 Git Flow：
 
 | 分支 | 用途 | 命名 |
 | --- | --- | --- |
-| `master` | 发布分支，受保护 | — |
-| `develop` | 日常集成 | — |
-| `feature/*` | 单个功能 | `feature/home-message-edit` |
-| `fix/*` | 缺陷修复 | `fix/sse-token-refresh-deadlock` |
-| `chore/*` | 杂项（依赖、文档、构建） | `chore/bump-compose-bom` |
-| `release/*` | 发布准备 | `release/1.2.0` |
-| `hotfix/*` | 紧急修复 | `hotfix/1.2.1-token-leak` |
+| `master` | 稳定发布分支，受保护 | — |
+| `develop` | 集成分支（可选） | — |
+| `feature/*` | 功能开发 | `feature/chat-streaming` |
+| `fix/*` | 缺陷修复 | `fix/login-token-expire` |
+| `hotfix/*` | 紧急修复 | `hotfix/crash-startup` |
 
-- `feature/*` / `fix/*` / `chore/*` 都从 `develop` 拉出，通过 PR 合回 `develop`；
-- 发布时从 `develop` 切 `release/*`，验证完成后合并到 `master` 与 `develop`；
-- 紧急修复从 `master` 切 `hotfix/*`，验证完成后同时合并到 `master` 与 `develop`。
+- 所有变更必须通过 PR 合并；
+- `feature/*` / `fix/*` 默认从 `master` 拉出；若项目维护 `develop` 集成分支，则从 `develop` 拉出并合回 `develop`；
+- `hotfix/*` 从 `master` 切出，验证后同时合回 `master`（与 `develop`，若存在）。
 
-## 2. Commit Message
+## 2. 分支规则（强制）
 
-使用 **Conventional Commits** 风格：
+- **禁止** 直接 push `master`；
+- **禁止** force push 到任何远程分支；
+- **必须** 通过 PR 合并所有变更；
+- **必须** 在 `feature/*` 或 `fix/*` 分支上开发。
+
+## 3. 分支命名规范
+
+```
+feature/<module>-<desc>
+fix/<module>-<desc>
+hotfix/<desc>
+```
+
+示例：
+
+- `feature/chat-streaming`
+- `fix/login-token-expire`
+- `hotfix/crash-startup`
+
+`<module>` 与 `<desc>` 仅使用小写字母、数字、`-`，避免下划线与缩写歧义。
+
+## 4. Commit Message
+
+使用 **Conventional Commits**：
 
 ```
 <type>(<scope>): <subject>
@@ -30,13 +53,13 @@
 <footer>
 ```
 
-### 2.1 Type
+### 4.1 Type
 
 | Type | 用途 |
 | --- | --- |
 | `feat` | 新功能 |
 | `fix` | 修复缺陷 |
-| `docs` | 仅修改文档（不影响代码） |
+| `docs` | 仅修改文档 |
 | `refactor` | 重构（既不是新功能也不是修 bug） |
 | `perf` | 性能优化 |
 | `test` | 测试相关 |
@@ -44,58 +67,180 @@
 | `style` | 仅格式调整（不影响逻辑） |
 | `revert` | 回退 |
 
-### 2.2 Scope
+### 4.2 Scope
 
-可选，建议使用模块名：`home`、`login`、`settings`、`network`、`data`、`auth`、`ui`、`docs`、`build`。
+可选，建议使用模块名：`home`、`login`、`settings`、`chat`、`network`、`data`、`auth`、`ui`、`docs`、`build`。
 
-### 2.3 Subject
+### 4.3 Subject
 
-- 中文或英文均可，推荐中文；
+- 必须使用英文；
 - 不超过 **50 字符**；
 - 动词开头，第一人称单数不用「我」；
 - 不加句号。
 
-### 2.4 Body / Footer
+### 4.4 Body / Footer
 
 - 解释「为什么」而非「做什么」；
 - 关联 Issue：`Refs: #123` 或 `Closes: #123`；
 - 破坏性变更：`BREAKING CHANGE: <说明>`。
 
-### 2.5 示例
+### 4.5 单一目的
+
+**每个 commit 必须只做一件事**。拆分原则：
+
+- 不同性质的变更（功能、修复、重构、格式化）拆为不同 commit；
+- 同一类型下若涉及多个独立子项，也应拆分；
+- 便于 `git revert` / `git bisect` / cherry-pick。
+
+### 4.6 示例
 
 ```
-feat(home): 支持用户消息编辑后重新生成
+feat(chat): 支持消息流式输出
 
-- 编辑用户消息后从该消息处截断上下文
-- 重新生成时仅保留「上一条用户消息及其之前上下文」
+- 重构消息渲染逻辑为流式更新
+- 支持逐字返回 AI 输出
+- 优化 UI 刷新性能
 
 Refs: #42
 ```
 
-## 3. PR 规范
+## 5. PR 规范
 
-- 标题与首个 commit 风格一致：`<type>(<scope>): <subject>`；
-- 描述必须包含：
-  1. 改动目的与动机；
-  2. 主要改动点（可列子项）；
-  3. 截图 / 录屏（UI 变更）；
-  4. 测试方式（手动 / 自动化）；
-  5. 关联 Issue。
-- 单 PR 不超过 **500 行** 净变更（不含生成代码 / 资源）；
-- 至少 1 位 Reviewer 通过；
-- CI（编译 / lint）必须全绿；
-- 禁止在 PR 中混入与主题无关的格式化变更（请单独提交 `style:` commit）。
+### 5.1 标题
 
-## 4. 提交流程
+`<type>(<scope>): <subject>`，与首个 commit 风格一致。
 
-1. `git pull --rebase` 同步远端；
-2. 本地完成开发，确保 `./gradlew.bat assembleDebug` 通过；
-3. 按 Conventional Commits 写 commit message；
-4. 推送分支并创建 PR；
-5. 处理 Review 意见，CI 通过后合并（默认 Squash Merge，保留清晰 commit 历史可用 Rebase Merge）。
+### 5.2 必含内容
 
-## 5. 注意事项
+1. **Why** —— 改动目的与动机；
+2. **What** —— 主要改动点（可列子项）；
+3. **How** —— 测试方式（手动 / 自动化）；
+4. **截图 / 录屏** —— UI 变更必须提供；
+5. **关联 Issue** —— `Refs:` / `Closes:`。
 
-- **不要** 把 `local.properties`、`build/`、`.gradle/`、`*.iml` 等提交到仓库（已在 `.gitignore`）；
-- `doc/.ai/` 目录在 `.gitignore` 内，任务工作区文件不提交；
-- 提交前确认没有遗留的 `TODO` / `println` / 调试代码。
+### 5.3 限制
+
+- **禁止** 混入与主题无关的改动（请单独提交 `style:` / `refactor:` commit 或独立 PR）；
+- **UI 改动必须独立 PR**，禁止与逻辑变更混提；
+- CI（Build / Test / Lint）必须全绿。
+
+### 5.4 合并策略
+
+| 策略 | 是否允许 | 适用场景 |
+| --- | --- | --- |
+| Squash Merge | ✅ 默认 | 单个 PR 一个语义单元时 |
+| Rebase Merge | ✅ 可用 | 需保留线性 commit 历史时 |
+| Merge Commit | ❌ 禁止 | — |
+
+## 6. 提交流程
+
+```bash
+# 1. 同步远端
+git pull --rebase origin master
+
+# 2. 创建功能分支
+git checkout -b feature/<module>-<desc>   # 或 fix/<module>-<desc>
+
+# 3. 本地开发
+
+# 4. 本地验证
+./gradlew assembleDebug
+
+# 5. 按 Conventional Commits 提交并推送（单一目的）
+git add <files>
+git commit -m "feat(chat): 支持消息流式输出"
+git push -u origin feature/<module>-<desc>
+
+# 6. 创建 PR
+
+# 7. CI + Review 通过后合并
+```
+
+## 7. PR 创建规范
+
+使用 GitHub CLI 创建 PR，不要直接 push 到主分支。
+
+### 基本格式
+
+```bash
+gh pr create \
+  --title "type(scope): description" \
+  --body "## 变更内容\n\n## 测试说明\n\n## 相关 Issue" \
+  --base master \
+  --head $(git branch --show-current)
+```
+
+### Commit 类型
+
+- `feat` 新功能
+- `fix` Bug 修复
+- `refactor` 重构
+- `docs` 文档
+- `chore` 构建/依赖
+
+### 示例
+
+```bash
+gh pr create \
+  --title "feat(auth): add refresh token support" \
+  --body "## 变更内容\n- 新增 refresh token 逻辑\n\n## 测试说明\n- 已测试 token 过期场景" \
+  --base master \
+  --head feature/refresh-token
+```
+
+### 注意事项
+
+- 创建 PR 前确保本地分支已 push：`git push -u origin HEAD`
+- PR 标题遵循 Conventional Commits 格式
+- body 必须包含变更内容和测试说明
+
+
+## 8. CI / 自动化要求
+
+- **Build** 必须通过；
+- **Test** 必须通过；
+- **Lint** 必须通过（如已配置）；
+- **禁止绕过 CI**（不使用 `--no-verify`、跳过 workflow 等手段）；
+- PR 在 CI 全绿前不得合并。
+
+## 9. AI / 自动化工具规则
+
+### 9.1 禁止行为
+
+- push 到 `master` / `master`；
+- force push 到任何远程分支；
+- rebase 已发布分支（`master` / 已合并的 `develop`）；
+- 绕过 PR 流程直接合并；
+- 自动合并未通过 CI 的 PR。
+
+### 9.2 允许行为
+
+- 在 `feature/*` / `fix/*` 分支上 commit、push；
+- 创建 / 更新 PR；
+- 生成 commit / PR 文案草稿；
+- 运行本地 build / lint / test 验证。
+
+### 9.3 AI 工作流
+
+```
+code change
+  → feature/fix branch
+  → commit (Conventional + 单一目的)
+  → push feature/*
+  → PR (含 Why / What / How)
+  → CI + Review
+  → merge
+```
+
+## 10. 注意事项
+
+- **不提交** 到仓库：
+  - `local.properties`
+  - `build/`
+  - `.gradle/`
+  - `*.iml`
+  - `node_modules/`
+- **禁止** 遗留调试代码：
+  - `println` / `console.log` / `Log.d` 等裸调试输出；
+  - 临时 `TODO` / `FIXME`（未被 Issue 跟踪的）。
+- 每个 commit 必须单一目的（见 [4.5](#45-单一目的)）。
