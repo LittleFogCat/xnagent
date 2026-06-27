@@ -15,6 +15,13 @@ interface AuthRepository {
     val session: StateFlow<AuthSession>
 
     /**
+     * 上次登录邮箱。
+     *
+     * 退出登录后仍然保留，供登录页自动回填；未登录过则返回 null。
+     */
+    val lastEmail: String?
+
+    /**
      * 使用邮箱密码登录（v2 双 token）。
      *
      * @param email 用户邮箱。

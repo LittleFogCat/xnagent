@@ -26,6 +26,14 @@ class AuthStore @Inject constructor(
     /** 提供给仓库和根 ViewModel 观察的认证状态流。 */
     val session: StateFlow<AuthSession> = _session.asStateFlow()
 
+    /**
+     * 上次登录邮箱，登出后仍保留。
+     *
+     * 退出登录时不清理此项，让登录页可以自动回填，方便用户再次登录。
+     */
+    val lastEmail: String?
+        get() = preferences.getString(KEY_EMAIL, null)?.takeIf { it.isNotBlank() }
+
     /** 返回当前可用于鉴权请求的 token；游客态和未登录态都会返回空。 */
     fun currentToken(): String? {
         val current = _session.value
@@ -64,9 +72,13 @@ class AuthStore @Inject constructor(
         _session.value = session
     }
 
-    /** 清空本地认证数据并重置为未登录状态。 */
+    /** 清空本地认证数据并重置为未登录状态，保留邮箱供登录页自动回填。 */
     fun clear() {
+        val savedEmail = preferences.getString(KEY_EMAIL, null)
         preferences.edit().clear().apply()
+        if (!savedEmail.isNullOrBlank()) {
+            preferences.edit().putString(KEY_EMAIL, savedEmail).apply()
+        }
         _session.value = AuthSession()
     }
 

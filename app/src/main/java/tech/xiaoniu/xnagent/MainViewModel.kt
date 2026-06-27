@@ -21,6 +21,12 @@ sealed interface MainDestination {
 data class MainUiState(
     val session: AuthSession = AuthSession(),
     val destination: MainDestination = MainDestination.Login,
+    /**
+     * 待选中的会话 ID。
+     *
+     * 设为非空时，主页在初始化时需要选中该会话；消费后清空，避免重复触发。
+     */
+    val pendingSessionId: String? = null,
 )
 
 /**
@@ -92,6 +98,33 @@ class MainViewModel @Inject constructor(
     /** 强制切回登录页。 */
     fun openLogin() {
         _uiState.update { it.copy(destination = MainDestination.Login) }
+    }
+
+    /**
+     * 跳转到首页并选中指定会话。
+     *
+     * 用于设置页添加智能体后自动跳转到对应聊天页。
+     */
+    fun openChat(sessionId: String) {
+        if (sessionId.isBlank()) return
+        _uiState.update { state ->
+            state.copy(
+                destination = if (state.session.canEnterHome) {
+                    MainDestination.Home
+                } else {
+                    MainDestination.Login
+                },
+                pendingSessionId = sessionId,
+            )
+        }
+    }
+
+    /** 清除已消费的待选中会话 ID。 */
+    fun consumePendingSessionId() {
+        _uiState.update { state ->
+            if (state.pendingSessionId == null) state
+            else state.copy(pendingSessionId = null)
+        }
     }
 
     /** 退出当前账号，并交由认证态监听回收首页/设置页访问权限。 */

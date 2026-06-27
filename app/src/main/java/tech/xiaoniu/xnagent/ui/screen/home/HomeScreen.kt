@@ -86,6 +86,8 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     onOpenSettings: () -> Unit = {},
     onOpenLogin: () -> Unit = {},
+    initialSessionId: String? = null,
+    onConsumeInitialSessionId: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState(HomeUiState())
@@ -93,6 +95,16 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         viewModel.dispatch(HomeIntent.Initialize)
+    }
+
+    // 上层（例如设置页添加智能体）若指定了会话 ID，在首次进入时选中并消费，
+    // 避免后续重复触发或被路由切换再次读到。
+    LaunchedEffect(initialSessionId) {
+        val sessionId = initialSessionId
+        if (!sessionId.isNullOrBlank()) {
+            viewModel.dispatch(HomeIntent.SelectSession(sessionId))
+            onConsumeInitialSessionId()
+        }
     }
 
     HomeScreenContent(

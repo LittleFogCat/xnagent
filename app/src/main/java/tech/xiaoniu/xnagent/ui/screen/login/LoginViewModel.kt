@@ -28,6 +28,15 @@ class LoginViewModel @Inject constructor(
     /** 登录/注册页唯一状态源，包含表单输入、校验错误和提交状态。 */
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    init {
+        // 上次成功登录后邮箱被持久化保留在 AuthStore 中；登出再次进入登录页时直接回填，
+        // 避免重复输入。用户主动修改后该值会被覆盖。
+        val savedEmail = authRepository.lastEmail
+        if (!savedEmail.isNullOrBlank()) {
+            _uiState.update { it.copy(email = savedEmail) }
+        }
+    }
+
     companion object {
         private const val LOGIN_CAPTCHA_TRIGGER_COUNT = 3
         private const val LOGIN_CAPTCHA_LENGTH = 5

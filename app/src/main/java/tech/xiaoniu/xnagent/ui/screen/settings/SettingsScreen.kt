@@ -1,9 +1,13 @@
 package tech.xiaoniu.xnagent.ui.screen.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -35,9 +39,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +60,9 @@ private enum class SettingsSection {
     FAVORITES,
 }
 
+/** 列表展开 / 收起动画时长，与思考过程展开保持一致。 */
+private const val SECTION_ANIM_DURATION_MS = 220
+
 /** 设置页，按用户信息、智能体、收藏和数据管理几个区域组织。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,12 +73,23 @@ fun SettingsScreen(
     email: String,
     onBack: () -> Unit = {},
     onBackToLogin: () -> Unit = {},
+    onOpenChat: (String) -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var expandedSection by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
     var showClearLocalDataDialog by rememberSaveable { mutableStateOf(false) }
+    var showLogoutDialog by rememberSaveable { mutableStateOf(false) }
     val noticeMessage = uiState.noticeMessage
+
+    // 智能体创建成功后由 ViewModel 发出事件，上层负责切到对应聊天页。
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is SettingsEvent.OpenChat -> onOpenChat(event.sessionId)
+            }
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -130,11 +150,17 @@ fun SettingsScreen(
                 icon = Icons.Outlined.Hub,
                 title = "智能体",
                 desc = if (uiState.agents.isEmpty()) "暂无可用智能体" else "${uiState.agents.size} 个可用智能体",
+                expandable = true,
+                expanded = expandedSection == SettingsSection.AGENTS,
                 onClick = {
                     expandedSection = if (expandedSection == SettingsSection.AGENTS) null else SettingsSection.AGENTS
                 },
             )
-            if (expandedSection == SettingsSection.AGENTS) {
+            AnimatedVisibility(
+                visible = expandedSection == SettingsSection.AGENTS,
+                enter = expandVertically(animationSpec = tween(SECTION_ANIM_DURATION_MS)),
+                exit = shrinkVertically(animationSpec = tween(SECTION_ANIM_DURATION_MS)),
+            ) {
                 SettingsSectionCard {
                     if (uiState.agents.isEmpty()) {
                         Text(
@@ -146,7 +172,7 @@ fun SettingsScreen(
                         uiState.agents.forEachIndexed { index, agent ->
                             AgentItem(
                                 agent = agent,
-                                onAdd = { viewModel.addAgentToChat(agent.id) },
+                                onClick = { viewModel.addAgentToChat(agent.id) },
                             )
                             if (index != uiState.agents.lastIndex) {
                                 HorizontalDivider(color = Color(0xFFEDEDED))
@@ -161,11 +187,17 @@ fun SettingsScreen(
                 icon = Icons.Outlined.BookmarkBorder,
                 title = "我的收藏",
                 desc = if (uiState.favorites.isEmpty()) "尚未收藏任何消息" else "${uiState.favorites.size} 条收藏",
+                expandable = true,
+                expanded = expandedSection == SettingsSection.FAVORITES,
                 onClick = {
                     expandedSection = if (expandedSection == SettingsSection.FAVORITES) null else SettingsSection.FAVORITES
                 },
             )
-            if (expandedSection == SettingsSection.FAVORITES) {
+            AnimatedVisibility(
+                visible = expandedSection == SettingsSection.FAVORITES,
+                enter = expandVertically(animationSpec = tween(SECTION_ANIM_DURATION_MS)),
+                exit = shrinkVertically(animationSpec = tween(SECTION_ANIM_DURATION_MS)),
+            ) {
                 SettingsSectionCard {
                     if (uiState.favorites.isEmpty()) {
                         Text(
@@ -204,7 +236,13 @@ fun SettingsScreen(
                 icon = Icons.AutoMirrored.Outlined.Logout,
                 title = if (isGuest) "前往登录" else "退出登录",
                 desc = if (isGuest) "登录后解锁完整能力" else null,
-                onClick = onBackToLogin,
+                onClick = {
+                    if (isGuest) {
+                        onBackToLogin()
+                    } else {
+                        showLogoutDialog = true
+                    }
+                },
             )
 
             // 底部区域用于反馈一次性操作结果，并展示当前版本号。
@@ -255,6 +293,34 @@ fun SettingsScreen(
                 },
             )
         }
+
+        // 退出登录会清空登录态，单独确认以避免误触。
+        if (showLogoutDialog) {
+            AlertDialog(
+                onDismissRequest = { showLogoutDialog = false },
+                title = { Text("退出登录") },
+                text = {
+                    Text("确定要退出当前账号吗？退出后仍会保留你的邮箱，方便下次直接登录。")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showLogoutDialog = false
+                            onBackToLogin()
+                        },
+                    ) {
+                        Text("确认退出")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showLogoutDialog = false },
+                    ) {
+                        Text("取消")
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -264,8 +330,16 @@ private fun SettingsRow(
     title: String,
     desc: String? = null,
     enabled: Boolean = true,
+    expandable: Boolean = false,
+    expanded: Boolean = false,
     onClick: () -> Unit = {},
 ) {
+    // 可展开行右侧箭头按状态旋转：收起向右，展开后向下。
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(durationMillis = SECTION_ANIM_DURATION_MS),
+        label = "settingsRowArrow",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -298,11 +372,14 @@ private fun SettingsRow(
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (expandable) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.rotate(arrowRotation),
+                )
+            }
         }
         HorizontalDivider(color = Color(0xFFEDEDED))
     }
@@ -325,11 +402,12 @@ private fun SettingsSectionCard(
 @Composable
 private fun AgentItem(
     agent: AgentUiState,
-    onAdd: () -> Unit,
+    onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -354,9 +432,6 @@ private fun AgentItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-        TextButton(onClick = onAdd, enabled = !agent.added) {
-            Text(if (agent.added) "已添加" else "添加")
         }
     }
 }

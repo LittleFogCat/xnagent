@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 onOpenSettings = viewModel::openSettings,
                                 onOpenLogin = viewModel::openLogin,
+                                initialSessionId = uiState.pendingSessionId,
+                                onConsumeInitialSessionId = viewModel::consumePendingSessionId,
                             )
                         }
 
@@ -52,6 +54,7 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     viewModel::logout
                                 },
+                                onOpenChat = viewModel::openChat,
                             )
                         }
 

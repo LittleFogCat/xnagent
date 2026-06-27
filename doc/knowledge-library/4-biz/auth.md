@@ -35,6 +35,8 @@ data class AuthSession(
 | `is_guest` | 游客态标记 |
 
 > `updateTokens(accessToken, refreshToken)` 只更新 token 字段，保留 `user` 等其他信息，专供 `TokenRefreshHandler` 在拦截器线程使用。
+>
+> `AuthStore.clear()` 会**保留 `email`**，仅清空 token / username / 游客态，避免退出登录后用户再次输入邮箱。保留值通过 `AuthStore.lastEmail`（同样透出到 `AuthRepository.lastEmail`）读取，由 `LoginViewModel.init` 自动回填到 `LoginUiState.email`。
 
 ## 2. 业务流程
 
@@ -137,7 +139,7 @@ AuthStore.clear() 清空本地 + 重置内存态
 MainViewModel 监听 session 变化，自动切回 Login 页面
 ```
 
-`SettingsScreen` 中「退出登录」或「清除本地数据」都会调用该流程。
+`SettingsScreen` 中「退出登录」或「清除本地数据」都会调用该流程；「退出登录」会先弹 `AlertDialog` 让用户确认，确认后调用 `MainViewModel.logout()`，登出后邮箱仍保留在本地，下次进入登录页自动回填。
 
 ## 4. 路由与认证态联动
 

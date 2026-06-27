@@ -64,7 +64,8 @@ MainDestination.Settings                          │       │
 | 抽屉 → 新对话 | `HomeScreen.DrawerContent.onNewChat` | `HomeIntent.CreateNewChat`（仍在 Home） |
 | 游客达到消息上限 | `HomeScreen` 顶部提示 | `onOpenLogin` → `openLogin` |
 | 设置 → 返回 | `SettingsScreen` 顶栏返回 | `onBack = viewModel::openHome` |
-| 设置 → 退出 / 登录 | `SettingsScreen` 底部 | 已登录：调用 `viewModel.logout()`；游客：调用 `viewModel.openLogin()` |
+| 设置 → 退出 / 登录 | `SettingsScreen` 底部 | 已登录：弹窗确认后调用 `viewModel.logout()`；游客：调用 `viewModel.openLogin()` |
+| 设置 → 智能体聊天 | `SettingsScreen.AgentItem` 点击 | `SettingsViewModel.addAgentToChat` 创建会话并发出 `SettingsEvent.OpenChat`，由 `MainViewModel.openChat` 切回首页并携带 `pendingSessionId`；`HomeScreen` 在 `initialSessionId` 非空时派发 `SelectSession` 后调用 `consumePendingSessionId` 复位 |
 | 登录 → 返回 | `LoginScreen`（已登录状态下显示） | `onBack = viewModel::openHome` |
 | 登录 → 游客 | `LoginScreen` 顶栏 | `LoginIntent.ContinueAsGuest` |
 

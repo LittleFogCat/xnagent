@@ -3,8 +3,11 @@ package tech.xiaoniu.xnagent.ui.screen.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -33,6 +36,12 @@ data class SettingsUiState(
     val isClearingLocalData: Boolean = false,
 )
 
+/** 设置页一次性导航事件，用于把页面级动作上报给上层路由。 */
+sealed interface SettingsEvent {
+    /** 打开指定会话的聊天页。 */
+    data class OpenChat(val sessionId: String) : SettingsEvent
+}
+
 /** 设置页状态管理，负责公开智能体、收藏列表和本地清理操作。 */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -44,6 +53,11 @@ class SettingsViewModel @Inject constructor(
 
     /** 设置页唯一状态源，聚合智能体、收藏和本地清理提示。 */
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    private val _events = MutableSharedFlow<SettingsEvent>(extraBufferCapacity = 1)
+
+    /** 设置页一次性事件流；上游订阅后触发跳转等副作用。 */
+    val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
 
     init {
         viewModelScope.launch {
@@ -102,15 +116,16 @@ class SettingsViewModel @Inject constructor(
                         ),
                     )
                 ).first()
-            }.onSuccess {
+            }.onSuccess { chatResponse ->
                 _uiState.update { state ->
                     state.copy(
                         agents = state.agents.map {
                             if (it.id == agent.id) it.copy(added = true) else it
                         },
-                        noticeMessage = "已将 ${agent.name} 添加到聊天记录",
+                        noticeMessage = "已进入 ${agent.name} 的聊天页",
                     )
                 }
+                _events.tryEmit(SettingsEvent.OpenChat(chatResponse.chat.id))
             }.onFailure {
                 _uiState.update { state ->
                     state.copy(noticeMessage = "添加智能体失败，请稍后重试")

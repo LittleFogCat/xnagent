@@ -25,6 +25,10 @@ class AuthRepositoryImpl @Inject constructor(
     /** 认证状态直接代理给本地存储，供全局路由统一观察。 */
     override val session: StateFlow<AuthSession> = authStore.session
 
+    /** 退出登录后保留的邮箱，供登录页自动回填。 */
+    override val lastEmail: String?
+        get() = authStore.lastEmail
+
     /** 注册流程中临时缓存的密码，用于注册完成后立即发起 v2 登录获取双 token。 */
     private var pendingRegisterPassword: String? = null
 

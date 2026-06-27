@@ -159,6 +159,9 @@ XNAgent 使用 Material3 作为设计语言基础，叠加一组业务色与少�
 ## 7. 动效
 
 - 消息项中思考过程展开：`expandVertically` / `shrinkVertically`，时长 220ms；
+- 设置页行展开 / 收起：`AnimatedVisibility` + `expandVertically` / `shrinkVertically`，时长 220ms（`SECTION_ANIM_DURATION_MS`）；
+- 设置页行右侧箭头旋转：`animateFloatAsState` + `Modifier.rotate`，与展开动画同步（220ms），收起时箭头朝右，展开后旋转 90° 朝下；
+- 无子列表的设置项不渲染右侧箭头（避免点击无反馈）；
 - 渐变背景：登录页静态渐变，不使用动画；
 - 加载占位：消息生成中显示「思考中…」占位文案 + 折叠态 reasoning。
 
