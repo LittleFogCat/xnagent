@@ -17,9 +17,19 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        google()
-        mavenCentral()
+        val isCI = System.getenv("CI") == "true"
+
+        if (isCI) {
+            // CI 环境用官方源，规避第三方镜像偶发的 502
+            google()
+            mavenCentral()
+        } else {
+            // 本地开发用阿里云镜像加速
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/public") }
+            google()
+            mavenCentral()
+        }
     }
 }
 
