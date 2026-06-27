@@ -17,6 +17,7 @@
 9. 当对用户提出的任务进行评估之后，认为该任务非常复杂，需要详细计划，则先在 `/doc/.ai/plan` 目录下生成计划文件，再进行任务的执行。文件名称格式为 `plan_{topic}_yyMMdd_HHmm.md`。
 10. 当执行了 review 任务后，需要在 `/doc/.ai/review` 目录下新建 review 文件，文件名格式为 `review_{topic}_yyMMdd_HHmm.md`。
 11. 当执行了对 review 的评估后，需要在 `/doc/.ai/review` 目录下新建评估文件，文件名格式为 `{review_file_name}_eval.md`。其中 `{review_file_name}` 为 review 文件的文件名（不包含扩展名）。
+12. 当用户要求 git 提交，则按照 git 规范文档中的 `提交流程` 进行执行。
 
 ## 文档维护约定
 
