@@ -5,6 +5,12 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 import tech.xiaoniu.xnagent.data.remote.dto.AuthResponse
 import tech.xiaoniu.xnagent.data.remote.dto.LoginRequest
+import tech.xiaoniu.xnagent.data.remote.dto.LoginV2Request
+import tech.xiaoniu.xnagent.data.remote.dto.LoginV2Response
+import tech.xiaoniu.xnagent.data.remote.dto.LogoutV2Request
+import tech.xiaoniu.xnagent.data.remote.dto.LogoutV2Response
+import tech.xiaoniu.xnagent.data.remote.dto.RefreshRequest
+import tech.xiaoniu.xnagent.data.remote.dto.RefreshResponse
 import tech.xiaoniu.xnagent.data.remote.dto.RegisterCaptchaResponse
 import tech.xiaoniu.xnagent.data.remote.dto.RegisterRequest
 import tech.xiaoniu.xnagent.data.remote.dto.RegisterRequestResponse
@@ -41,4 +47,16 @@ interface AuthApi {
      */
     @POST("/api/login")
     suspend fun login(@Body request: LoginRequest): AuthResponse
+
+    /** v2 双 token 登录，需携带设备标识。 */
+    @POST("/api/login-v2")
+    suspend fun loginV2(@Body request: LoginV2Request): LoginV2Response
+
+    /** 使用 refresh token 换取新的 access token（Token Rotation）。 */
+    @POST("/api/refresh")
+    suspend fun refresh(@Body request: RefreshRequest): RefreshResponse
+
+    /** 吊销 refresh token，使当前设备登录态立即失效。 */
+    @POST("/api/logout-v2")
+    suspend fun logoutV2(@Body request: LogoutV2Request): LogoutV2Response
 }

@@ -2,10 +2,12 @@ package tech.xiaoniu.xnagent.data.repository
 
 import kotlinx.coroutines.flow.StateFlow
 import tech.xiaoniu.xnagent.data.local.AuthStore
+import tech.xiaoniu.xnagent.data.local.TokenRefreshHandler
 import tech.xiaoniu.xnagent.data.remote.api.AuthApi
-import tech.xiaoniu.xnagent.data.remote.dto.LoginRequest
-import tech.xiaoniu.xnagent.data.remote.dto.RegisterRequest
+import tech.xiaoniu.xnagent.data.remote.dto.LoginV2Request
+import tech.xiaoniu.xnagent.data.remote.dto.LogoutV2Request
 import tech.xiaoniu.xnagent.data.remote.dto.RegisterCaptchaResponse
+import tech.xiaoniu.xnagent.data.remote.dto.RegisterRequest
 import tech.xiaoniu.xnagent.data.remote.dto.RegisterRequestResponse
 import tech.xiaoniu.xnagent.data.remote.dto.RegisterVerifyRequest
 import javax.inject.Inject
@@ -18,16 +20,28 @@ import javax.inject.Singleton
 class AuthRepositoryImpl @Inject constructor(
     private val authApi: AuthApi,
     private val authStore: AuthStore,
+    private val tokenRefreshHandler: TokenRefreshHandler,
 ) : AuthRepository {
     /** 认证状态直接代理给本地存储，供全局路由统一观察。 */
     override val session: StateFlow<AuthSession> = authStore.session
 
-    override suspend fun login(email: String, password: String): AuthSession {
-        // 登录成功后立即落地到本地存储，保证应用重启后仍能恢复会话。
-        val response = authApi.login(
-            LoginRequest(
+    /** 注册流程中临时缓存的密码，用于注册完成后立即发起 v2 登录获取双 token。 */
+    private var pendingRegisterPassword: String? = null
+
+    override fun getDeviceId(): String = authStore.getDeviceId()
+
+    override suspend fun login(
+        email: String,
+        password: String,
+        deviceId: String,
+        deviceName: String?,
+    ): AuthSession {
+        val response = authApi.loginV2(
+            LoginV2Request(
                 email = email.trim(),
                 password = password,
+                deviceId = deviceId,
+                deviceName = deviceName,
             )
         )
         return response.toAuthSession().also(authStore::saveSession)
@@ -43,7 +57,8 @@ class AuthRepositoryImpl @Inject constructor(
         captchaId: String,
         captchaAnswer: String,
     ): RegisterRequestResponse {
-        // 发送前统一 trim 输入，减少由前后空格造成的无效请求。
+        // 注册完成后需要发起 v2 登录以获取双 token，此处缓存密码供后续使用。
+        pendingRegisterPassword = password
         return authApi.requestRegister(
             RegisterRequest(
                 email = email.trim(),
@@ -55,23 +70,57 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     override suspend fun verifyRegister(email: String, code: String): AuthSession {
-        // 注册校验成功后直接建立登录态，减少用户额外登录步骤。
-        val response = authApi.verifyRegister(
+        val password = pendingRegisterPassword
+        pendingRegisterPassword = null
+
+        // 先完成注册，建立 v1 登录态。
+        val verifyResponse = authApi.verifyRegister(
             RegisterVerifyRequest(
                 email = email.trim(),
                 code = code.trim(),
             )
         )
-        return response.toAuthSession().also(authStore::saveSession)
+
+        // 注册成功后立即尝试 v2 登录，获取双 token 以实现完整的 Token Rotation 体验。
+        if (password != null) {
+            runCatching {
+                val v2Response = authApi.loginV2(
+                    LoginV2Request(
+                        email = email.trim(),
+                        password = password,
+                        deviceId = authStore.getDeviceId(),
+                    )
+                )
+                return v2Response.toAuthSession().also(authStore::saveSession)
+            }
+        }
+
+        // 降级：无法获取 v2 token（如密码缓存丢失），使用 v1 格式 session，
+        // 无 refreshToken，accessToken 过期后需重新登录。
+        return AuthSession(
+            token = verifyResponse.token,
+            user = AuthUser(
+                username = verifyResponse.user.username,
+                email = verifyResponse.user.email,
+            ),
+            isGuest = false,
+        ).also(authStore::saveSession)
     }
 
     override suspend fun continueAsGuest() {
-        // 游客模式只写入本地会话，不调用远端认证接口。
         authStore.saveSession(AuthSession(isGuest = true))
     }
 
     override suspend fun logout() {
-        // 清空本地存储即可退出，后续路由会根据 session 自动跳回登录页。
+        // 尝试服务端吊销 refresh token，使当前设备登录态立即失效。
+        val currentRefreshToken = authStore.session.value.refreshToken
+        if (!currentRefreshToken.isNullOrBlank()) {
+            runCatching {
+                authApi.logoutV2(LogoutV2Request(refreshToken = currentRefreshToken))
+            }
+        }
+        // 唤醒等待中的刷新线程，避免它们在登出后继续操作。
+        tokenRefreshHandler.reset()
         authStore.clear()
     }
 }

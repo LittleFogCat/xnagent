@@ -21,6 +21,7 @@ import tech.xiaoniu.xnagent.data.repository.AuthRepositoryImpl
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepositoryImpl
 import tech.xiaoniu.xnagent.data.local.AuthStore
+import tech.xiaoniu.xnagent.data.local.TokenRefreshHandler
 import tech.xiaoniu.xnagent.data.local.XNDatabase
 import tech.xiaoniu.xnagent.data.local.dao.ChatDao
 import tech.xiaoniu.xnagent.data.local.network.HttpStreamingLoggingInterceptor
@@ -64,10 +65,18 @@ class AppModule {
 
     @Provides
     @Singleton
+    fun provideTokenRefreshHandler(
+        authStore: AuthStore,
+        json: Json,
+    ): TokenRefreshHandler = TokenRefreshHandler(authStore, json)
+
+    @Provides
+    @Singleton
     fun provideAuthRepository(
         authApi: AuthApi,
         authStore: AuthStore,
-    ): AuthRepository = AuthRepositoryImpl(authApi, authStore)
+        tokenRefreshHandler: TokenRefreshHandler,
+    ): AuthRepository = AuthRepositoryImpl(authApi, authStore, tokenRefreshHandler)
 
     @Provides
     @Singleton
@@ -101,14 +110,16 @@ class NetworkModule {
     /**
      * 提供常规 HTTP 客户端。
      *
-     * 自动附带 Bearer Token，并在 debug 模式下输出完整请求日志。
+     * 自动附带 Bearer Token、401 自动刷新 token、debug 模式日志。
      */
     @Provides
     @Singleton
     fun provideOkHttpClient(
         appConfig: AppConfig,
         authStore: AuthStore,
+        tokenRefreshHandler: TokenRefreshHandler,
     ): OkHttpClient = OkHttpClient.Builder()
+        // 鉴权头注入
         .addInterceptor { chain ->
             val token = authStore.currentToken()
             val request = if (token.isNullOrBlank()) {
@@ -119,6 +130,32 @@ class NetworkModule {
                     .build()
             }
             chain.proceed(request)
+        }
+        // 401 自动刷新 token
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val requestPath = request.url.encodedPath
+            val originalResponse = chain.proceed(request)
+
+            if (originalResponse.code == 401
+                && requestPath != "/api/refresh"
+                && requestPath != "/api/logout-v2"
+            ) {
+                originalResponse.close()
+                val refreshed = tokenRefreshHandler.refreshToken()
+                if (refreshed) {
+                    val newToken = authStore.currentToken()
+                    if (newToken != null) {
+                        val retryRequest = request.newBuilder()
+                            .header("Authorization", "Bearer $newToken")
+                            .build()
+                        return@addInterceptor chain.proceed(retryRequest)
+                    }
+                }
+                // 刷新失败，清除登录态触发重新登录
+                authStore.clear()
+            }
+            originalResponse
         }
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = if (appConfig.isDebug) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE

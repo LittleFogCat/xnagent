@@ -233,7 +233,11 @@ class LoginViewModel @Inject constructor(
                 )
             }
             runCatching {
-                authRepository.login(state.email, state.password)
+                authRepository.login(
+                    email = state.email,
+                    password = state.password,
+                    deviceId = authRepository.getDeviceId(),
+                )
             }.onSuccess {
                 _uiState.update {
                     it.copy(

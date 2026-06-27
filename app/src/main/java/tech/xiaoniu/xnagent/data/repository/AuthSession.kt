@@ -13,6 +13,7 @@ data class AuthUser(
  */
 data class AuthSession(
     val token: String? = null,
+    val refreshToken: String? = null,
     val user: AuthUser? = null,
     val isGuest: Boolean = false,
 ) {
