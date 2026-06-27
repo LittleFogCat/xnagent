@@ -97,5 +97,5 @@ Refs: #42
 ## 5. 注意事项
 
 - **不要** 把 `local.properties`、`build/`、`.gradle/`、`*.iml` 等提交到仓库（已在 `.gitignore`）；
-- `doc/tasks/` 目录在 `.gitignore` 内，任务工作区文件不提交；
+- `doc/.ai/` 目录在 `.gitignore` 内，任务工作区文件不提交；
 - 提交前确认没有遗留的 `TODO` / `println` / 调试代码。

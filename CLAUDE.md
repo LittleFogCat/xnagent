@@ -55,8 +55,8 @@
 - 修改路由 / 抽屉 / 登录跳转 → 更新 [5-ui/navigation.md](doc/knowledge-library/5-ui/navigation.md)；
 - 修改颜色 / 字体 / 形状 / 间距 → 更新 [5-ui/design-system.md](doc/knowledge-library/5-ui/design-system.md)；
 - 新增 / 修改服务端接口 → 更新 [doc/api/](../doc/api/) 对应文档。
-- 执行了 review 任务 -> 在 `/doc/tasks/review` 目录新建 review 文件，文件名格式为 `review_{topic}_yyyyMMdd_HHmmss.md`。
-- 执行了对 review 的评估 -> 在 `/doc/tasks/review` 目录新建评估文件，文件名格式为 `{review_file_name}_eval.md`。其中 `{review_file_name}` 为 review 文件的文件名（不包含扩展名）。
+- 执行了 review 任务 -> 在 `/doc/.ai/review` 目录新建 review 文件，文件名格式为 `review_{topic}_yyyyMMdd_HHmmss.md`。
+- 执行了对 review 的评估 -> 在 `/doc/.ai/review` 目录新建评估文件，文件名格式为 `{review_file_name}_eval.md`。其中 `{review_file_name}` 为 review 文件的文件名（不包含扩展名）。
 
 ## 示例
 

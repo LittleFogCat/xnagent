@@ -24,7 +24,7 @@ XNAgent/
 │   │   ├── 3-modules/
 │   │   ├── 4-biz/
 │   │   └── 5-ui/
-│   └── tasks/                      # 任务工作区（已 gitignore）
+│   └── .ai/                      # AI 任务工作区（已 gitignore）
 ├── gradle/
 │   ├── gradle-daemon-jvm.properties
 │   ├── libs.versions.toml          # 版本目录
@@ -118,5 +118,5 @@ tech.xiaoniu.xnagent/
 - 文档集中在 `doc/`：
   - `doc/api/`：服务端 API 文档（`auth.md`、`chat.md`）；
   - `doc/knowledge-library/`：项目知识库（按 `1-overview` / `2-convention` / `3-modules` / `4-biz` / `5-ui` 分目录）；
-  - `doc/tasks/`：任务工作区，**已 gitignore**，不提交；
+  - `doc/.ai/`：AI 任务工作区，**已 gitignore**，不提交；
 - 修改代码后，**必须**评估是否要同步更新知识库对应文档（见 [`../../../CLAUDE.md`](../../../CLAUDE.md)）。

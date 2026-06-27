@@ -57,7 +57,7 @@ doc/knowledge-library/
 ## 相关目录
 
 - 服务端 API 定义：[`../api/`](../api/)（`auth.md`、`chat.md`）；
-- 任务工作区（已 gitignore）：[`../tasks/`](../tasks/)；
+- AI 任务工作区（已 gitignore）：[`../.ai/`](../.ai/)；
 - 根文档导航：[`../../CLAUDE.md`](../../CLAUDE.md) / [`../../AGENTS.md`](../../AGENTS.md)。
 
 ## 文档维护
