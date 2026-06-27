@@ -17,6 +17,8 @@ sealed class HomeIntent {
 
     object SendMessage : HomeIntent()
 
+    object CancelMessage : HomeIntent()
+
     data class SelectModel(val model: ModelUiModel) : HomeIntent()
 
     data class SelectSession(val sessionId: String) : HomeIntent()

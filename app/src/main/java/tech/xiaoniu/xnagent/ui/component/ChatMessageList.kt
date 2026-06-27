@@ -617,11 +617,12 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "typingDots")
     val density = LocalDensity.current
 
+    // 与 ChatMessageItem 助手气泡外层保持相同的水平 padding，让三个圆点紧贴气泡左边缘。
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.Start),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 三个点从左到右依次点亮，模拟文字打出方向。
@@ -643,7 +644,7 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .graphicsLayer { translationY = with(density) { (-4).dp.toPx() } * anim }
-                    .size(8.dp)
+                    .size(6.dp)
                     .background(
                         color = dotColor.copy(alpha = 0.35f + 0.55f * anim),
                         shape = androidx.compose.foundation.shape.CircleShape,

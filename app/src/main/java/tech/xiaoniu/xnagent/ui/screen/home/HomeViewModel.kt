@@ -4,6 +4,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +48,12 @@ class HomeViewModel @Inject constructor(
 
     private var initialized = false
 
+    /**
+     * 当前进行中的流式对话请求；用于在用户点击停止按钮时取消协程，
+     * 让 [HomeRepositoryImpl.sendToLLM] 中的 `ensureActive()` 抛出并断开 SSE。
+     */
+    private var sendJob: Job? = null
+
     private companion object {
         const val GUEST_USER_MESSAGE_LIMIT = 10
     }
@@ -59,6 +67,7 @@ class HomeViewModel @Inject constructor(
             is HomeIntent.SetAgentMode -> _uiState.update { it.copy(agentMode = intent.mode) }
             is HomeIntent.UpdateInput -> _uiState.update { it.copy(inputText = intent.text) }
             HomeIntent.SendMessage -> sendNewMessage()
+            HomeIntent.CancelMessage -> cancelMessage()
             is HomeIntent.SelectModel -> _uiState.update {
                 it.copy(
                     currentModel = intent.model,
@@ -388,7 +397,10 @@ class HomeViewModel @Inject constructor(
         val currentModel = _uiState.value.currentModel ?: return
         val useRemote = authRepository.session.value.isLoggedIn
 
-        viewModelScope.launch {
+        // 同时只允许一个进行中的请求，避免新旧请求相互覆盖或重复落盘。
+        sendJob?.cancel()
+
+        sendJob = viewModelScope.launch {
             // 先保存用户侧消息，确保刷新或切后台后仍能恢复到“待回复”状态。
             val savedBaseChat = runCatching {
                 homeRepository.saveStoredChat(
@@ -399,7 +411,10 @@ class HomeViewModel @Inject constructor(
                 )
             }.onFailure {
                 Log.w(tag, "sendConversation: save base chat failed", it)
-            }.getOrNull() ?: return@launch
+            }.getOrNull() ?: run {
+                sendJob = null
+                return@launch
+            }
 
             applyStoredChat(savedBaseChat, messagesOverride = baseMessages)
             val persistedSessionId = savedBaseChat.sessionId
@@ -414,11 +429,6 @@ class HomeViewModel @Inject constructor(
                     }
                 ),
             )
-
-            // 标记进入请求中状态，UI 用来禁用发送按钮和展示状态提示。
-            // 放在 try 内以确保异常路径下也能被 finally 复位（与 isResponding = false 配对）。
-            try {
-                _uiState.update { it.copy(isResponding = true) }
 
             var conversation = baseMessages
             var assistantMessageId: String? = null
@@ -463,75 +473,104 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
-            homeRepository.sendToLLM(request).collect { result ->
-                when (result) {
-                    is SendToLLMResult.Thinking -> {
-                        Log.d(tag, "sendToLLM: ${currentTimeF()} thinking...: ${result.content}")
-                        // reasoning 片段用于展示“思考过程”，正文尚未开始生成。
-                        if (thinkingStartedAtMs == null) {
-                            thinkingStartedAtMs = System.currentTimeMillis()
+            // 标记进入请求中状态，UI 用来禁用发送按钮和展示状态提示。
+            // 放在 try 内以确保异常路径下也能被 finally 复位（与 isResponding = false 配对）。
+            try {
+                _uiState.update { it.copy(isResponding = true) }
+
+                homeRepository.sendToLLM(request).collect { result ->
+                    when (result) {
+                        is SendToLLMResult.Thinking -> {
+                            Log.d(tag, "sendToLLM: ${currentTimeF()} thinking...: ${result.content}")
+                            // reasoning 片段用于展示“思考过程”，正文尚未开始生成。
+                            if (thinkingStartedAtMs == null) {
+                                thinkingStartedAtMs = System.currentTimeMillis()
+                            }
+                            isThinking = true
+                            isGenerating = true
+                            accumulatedReasoning += result.content
+                            upsertAssistantMessage()
                         }
-                        isThinking = true
-                        isGenerating = true
-                        accumulatedReasoning += result.content
-                        upsertAssistantMessage()
-                    }
 
-                    is SendToLLMResult.Streaming -> {
-                        Log.d(tag, "sendToLLM: ${currentTimeF()} streaming...: ${result.content}")
-                        // 正文流到来后关闭 thinking 标记，但仍保持 generating 直到流结束。
-                        accumulatedContent += result.content
-                        isThinking = false
-                        isGenerating = true
-                        upsertAssistantMessage()
-                    }
+                        is SendToLLMResult.Streaming -> {
+                            Log.d(tag, "sendToLLM: ${currentTimeF()} streaming...: ${result.content}")
+                            // 正文流到来后关闭 thinking 标记，但仍保持 generating 直到流结束。
+                            accumulatedContent += result.content
+                            isThinking = false
+                            isGenerating = true
+                            upsertAssistantMessage()
+                        }
 
-                    is SendToLLMResult.Error -> {
-                        Log.w(tag, "sendToLLM: response error", result.error)
-                        accumulatedContent = "哎呀，好像出错了！错误信息：${result.error.message}"
-                        isThinking = false
-                        isGenerating = false
-                        upsertAssistantMessage()
-                    }
+                        is SendToLLMResult.Error -> {
+                            Log.w(tag, "sendToLLM: response error", result.error)
+                            accumulatedContent = "哎呀，好像出错了！错误信息：${result.error.message}"
+                            isThinking = false
+                            isGenerating = false
+                            upsertAssistantMessage()
+                        }
 
-                    is SendToLLMResult.Success -> {
-                        isThinking = false
-                        isGenerating = false
-                        upsertAssistantMessage()
-                        Log.i(tag, "sendToLLM: onSuccess")
+                        is SendToLLMResult.Success -> {
+                            isThinking = false
+                            isGenerating = false
+                            upsertAssistantMessage()
+                            Log.i(tag, "sendToLLM: onSuccess")
+                        }
                     }
                 }
-            }
 
-            // 某些服务端流可能没有显式终态事件，这里做一次兜底收尾。
-            if (assistantMessageId != null && (isThinking || isGenerating)) {
-                isThinking = false
-                isGenerating = false
-                upsertAssistantMessage()
-            }
+                // 某些服务端流可能没有显式终态事件，这里做一次兜底收尾。
+                if (assistantMessageId != null && (isThinking || isGenerating)) {
+                    isThinking = false
+                    isGenerating = false
+                    upsertAssistantMessage()
+                }
 
-            val finalStoredChat = runCatching {
-                homeRepository.saveStoredChat(
-                    sessionId = persistedSessionId,
-                    modelId = currentModel.id,
-                    messages = conversation,
-                    useRemote = useRemote,
-                )
-            }.onFailure {
-                Log.w(tag, "sendConversation: save final chat failed", it)
-            }.getOrNull()
+                val finalStoredChat = runCatching {
+                    homeRepository.saveStoredChat(
+                        sessionId = persistedSessionId,
+                        modelId = currentModel.id,
+                        messages = conversation,
+                        useRemote = useRemote,
+                    )
+                }.onFailure {
+                    Log.w(tag, "sendConversation: save final chat failed", it)
+                }.getOrNull()
 
-            if (finalStoredChat != null) {
-                applyStoredChat(finalStoredChat, messagesOverride = conversation)
-            } else if (useRemote) {
-                refreshRemoteSessions()
-            }
+                if (finalStoredChat != null) {
+                    applyStoredChat(finalStoredChat, messagesOverride = conversation)
+                } else if (useRemote) {
+                    refreshRemoteSessions()
+                }
 
-            // 不管是流式结束、错误还是兜底收尾，结束前都要恢复 UI 状态。
+                // 不管是流式结束、错误还是兜底收尾，结束前都要恢复 UI 状态。
+            } catch (e: CancellationException) {
+                // 用户主动停止：保留已累积的内容并落盘，避免刷新或切后台后丢失部分回复。
+                if (assistantMessageId != null) {
+                    isThinking = false
+                    isGenerating = false
+                    upsertAssistantMessage()
+                    runCatching {
+                        homeRepository.saveStoredChat(
+                            sessionId = persistedSessionId,
+                            modelId = currentModel.id,
+                            messages = conversation,
+                            useRemote = useRemote,
+                        )
+                    }.onFailure {
+                        Log.w(tag, "sendConversation: save cancelled chat failed", it)
+                    }
+                }
+                throw e
             } finally {
                 _uiState.update { it.copy(isResponding = false) }
+                sendJob = null
             }
         }
+    }
+
+    /** 取消当前进行中的流式对话请求；用于输入区在等待响应时切换为停止按钮。 */
+    private fun cancelMessage() {
+        sendJob?.cancel()
     }
 
     /** 使用仓库返回的会话快照统一刷新当前会话 ID、模型选择和消息列表。 */

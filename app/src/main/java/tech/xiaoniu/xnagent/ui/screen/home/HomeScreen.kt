@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Air
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -389,16 +390,23 @@ fun HomeScreenContent(
 
                             IconButton(
                                 onClick = {
-                                    if (uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached && !uiState.isResponding) {
+                                    if (uiState.isResponding) {
+                                        onAction(HomeIntent.CancelMessage)
+                                    } else if (uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached) {
                                         onAction(HomeIntent.SendMessage)
                                         keyboardController?.hide()
                                     }
                                 },
-                                enabled = uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached && !uiState.isResponding
+                                enabled = uiState.isResponding ||
+                                    (uiState.inputText.isNotBlank() && !uiState.isGuestMessageLimitReached)
                             ) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "发送",
+                                    imageVector = if (uiState.isResponding) {
+                                        Icons.Filled.Stop
+                                    } else {
+                                        Icons.AutoMirrored.Filled.Send
+                                    },
+                                    contentDescription = if (uiState.isResponding) "停止" else "发送",
                                     modifier = Modifier.padding(2.dp),
                                     tint = colorResource(R.color.chat_send_button_bg)
                                 )
