@@ -90,7 +90,7 @@ data class AgentsResponse(
 @Serializable
 data class ChatDto(
     val id: String,
-    val userId: String,
+    val userId: String? = null,
     val title: String,
     val model: String,
     val chatTarget: ChatTargetDto? = null,

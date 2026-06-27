@@ -12,7 +12,7 @@
 | 参数名 | 参数类型 | 是否必需 | 参数说明及示例值 |
 | --- | --- | --- | --- |
 | id | string | 是 | 聊天记录 ID。 |
-| userId | string | 是 | 所属用户邮箱，例如 `user@example.com`。 |
+| userId | string | 否 | 所属用户邮箱，例如 `user@example.com`。当前部分接口（如 `GET /api/chats`）未返回该字段，客户端允许为空。 |
 | title | string | 是 | 聊天标题，例如 `新对话`。 |
 | model | string | 是 | 模型 ID，例如 `deepseek/deepseek-v4-flash`。 |
 | chatTarget | object\|null | 是 | 聊天目标；当为智能体会话时为 `{ "type": "identity", "id": "xiaonaimo" }`。 |
