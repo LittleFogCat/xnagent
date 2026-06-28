@@ -22,6 +22,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ksp {
+            // Room schema 导出到 $projectDir/schemas/，CI 通过 git diff 校验漂移。
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
     }
 
     buildTypes {
