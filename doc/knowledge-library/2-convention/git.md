@@ -153,7 +153,13 @@ git push -u origin feature/<module>-<desc>
 
 # 6. 创建 PR
 
-# 7. CI + Review 通过后合并
+# 7. 开启 PR 自动合并（推荐）
+# GitHub 仓库设置「Allow auto-merge」需先开启（Settings → General → Pull Requests）。
+# 命令会立即给当前 PR 挂上 auto-merge，CI 全绿后自动 Squash 合入 master，
+# 并自动删除远端 feature/* / fix/* 分支。
+gh pr merge --auto --squash --delete-branch
+
+# 8. CI + Review 通过后合并
 ```
 
 ## 7. PR 创建规范
