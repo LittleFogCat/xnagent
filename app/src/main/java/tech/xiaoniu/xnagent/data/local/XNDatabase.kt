@@ -11,8 +11,8 @@ import tech.xiaoniu.xnagent.data.local.entity.Session
  */
 @Database(
     entities = [Session::class, ChatMessage::class],
-    version = 1,
-    exportSchema = false,
+    version = 2,
+    exportSchema = true,
 )
 abstract class XNDatabase : RoomDatabase() {
     /** 当前应用唯一使用的聊天 DAO。 */

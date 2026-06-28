@@ -13,15 +13,19 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import tech.xiaoniu.xnagent.common.Constants
 import tech.xiaoniu.xnagent.common.util.currentTimeF
-import tech.xiaoniu.xnagent.data.repository.AuthRepository
-import tech.xiaoniu.xnagent.data.local.entity.Session
+import tech.xiaoniu.xnagent.data.remote.dto.AgentInfoDto
+import tech.xiaoniu.xnagent.data.remote.dto.ChatDto
 import tech.xiaoniu.xnagent.data.remote.dto.ChatRequest
 import tech.xiaoniu.xnagent.data.remote.dto.ThinkingConfig
+import tech.xiaoniu.xnagent.data.repository.AuthRepository
+import tech.xiaoniu.xnagent.data.local.entity.Session
 import tech.xiaoniu.xnagent.data.repository.FavoriteMessage
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
 import tech.xiaoniu.xnagent.data.repository.HomeRepository
 import tech.xiaoniu.xnagent.data.repository.StoredChat
+import tech.xiaoniu.xnagent.ui.model.AgentUiModel
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.HomeUiState
 import tech.xiaoniu.xnagent.ui.model.MessageRole
@@ -50,7 +54,7 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 当前进行中的流式对话请求；用于在用户点击停止按钮时取消协程，
-     * 让 [HomeRepositoryImpl.sendToLLM] 中的 `ensureActive()` 抛出并断开 SSE。
+     * 让 [tech.xiaoniu.xnagent.data.repository.HomeRepositoryImpl.sendToLLM] 中的 `ensureActive()` 抛出并断开 SSE。
      */
     private var sendJob: Job? = null
 
@@ -60,7 +64,13 @@ class HomeViewModel @Inject constructor(
      */
     private var loadSessionJob: Job? = null
 
-    private companion object {
+    /**
+     * 当前进行中的标题生成协程。用户在标题生成期间切换会话 / 退出时取消，避免脏写。
+     */
+    private var generateTitleJob: Job? = null
+
+    internal companion object {
+        /** 游客模式单会话用户消息上限；UI 文案与本常量保持一致。 */
         const val GUEST_USER_MESSAGE_LIMIT = 10
     }
 
@@ -82,6 +92,8 @@ class HomeViewModel @Inject constructor(
             }
 
             is HomeIntent.SelectSession -> {
+                // 切换会话时取消进行中的标题生成，避免标题完成时把已选会话的 ID 覆盖回新会话。
+                generateTitleJob?.cancel()
                 _uiState.update { state ->
                     state.copy(
                         currentSessionId = intent.sessionId,
@@ -99,13 +111,18 @@ class HomeViewModel @Inject constructor(
             is HomeIntent.RegenerateAssistantMessage -> regenerateAssistantMessage(intent.messageId)
             is HomeIntent.DeleteMessage -> deleteMessage(intent.messageId)
             is HomeIntent.FavoriteMessage -> favoriteMessage(intent.messageId)
+
+            is HomeIntent.SetSessionPinned -> setSessionPinned(intent.sessionId, intent.pin)
+            is HomeIntent.DeleteSession -> deleteSession(intent.sessionId)
+            is HomeIntent.RenameSession -> renameSession(intent.sessionId, intent.newTitle)
+            HomeIntent.ConsumeError -> _uiState.update { it.copy(errorMessage = null) }
         }
     }
 
     /**
      * 完成首页首次初始化。
      *
-     * 首次进入时注册模型、认证态和收藏监听；后续只在已登录场景补拉远端会话。
+     * 首次进入时注册模型、认证态、智能体和收藏监听；后续只在已登录场景补拉远端会话。
      */
     private fun initialize() {
         // 首次进入时只注册一次观察者；后续回到页面只补一次远端会话刷新。
@@ -119,6 +136,7 @@ class HomeViewModel @Inject constructor(
         observeModels()
         observeAuthState()
         observeFavorites()
+        observeAgents()
     }
 
     /** 监听可用模型列表，并尽量保持当前会话的模型选择不被刷新覆盖。 */
@@ -145,6 +163,23 @@ class HomeViewModel @Inject constructor(
                     it.copy(
                         availableModels = modelUiModels,
                         currentModel = selectedModel,
+                    )
+                }
+            }
+        }
+    }
+
+    /** 监听公开智能体列表，用于抽屉条目显示智能体头像 / 名称。 */
+    private fun observeAgents() {
+        viewModelScope.launch {
+            homeRepository.getAgents().catch {
+                Log.w(tag, "observeAgents: ${it.stackTraceToString()}")
+            }.collect { response ->
+                val agents = response.identities.map { it.toAgentUiModel() }
+                _uiState.update { state ->
+                    state.copy(
+                        availableAgents = agents,
+                        sessions = state.sessions.mergeAgentInfo(agents),
                     )
                 }
             }
@@ -207,18 +242,17 @@ class HomeViewModel @Inject constructor(
     /** 从服务端刷新会话列表，并映射成侧边栏所需的 UI 模型。 */
     private fun refreshRemoteSessions() {
         viewModelScope.launch {
+            // 刷新之前先重试上次远端失败的 pin / rename / delete，避免多端数据长期不一致。
+            runCatching { homeRepository.retryPendingOperations() }
+                .onFailure { Log.w(tag, "refreshRemoteSessions: retryPendingOperations failed", it) }
             homeRepository.getChats().catch {
                 Log.w(tag, "refreshRemoteSessions: ${it.stackTraceToString()}")
             }.collect { response ->
-                applySessionList(
-                    response.chats.map {
-                        SessionUiModel(
-                            id = it.id,
-                            title = it.title,
-                            lastMessageTime = it.updatedAt ?: it.createdAt ?: System.currentTimeMillis(),
-                        )
-                    }
-                )
+                // 远端未携带 isPinned 时按本地为准，避免老版本服务端导致置顶丢失。
+                val localPinnedIds = runCatching { homeRepository.getLocalPinnedSessionIds() }
+                    .getOrDefault(emptySet())
+                val agentMap = _uiState.value.availableAgents.associateBy { it.id }
+                applySessionList(response.chats.map { it.toSessionUiModel(agentMap, localPinnedIds) })
             }
         }
     }
@@ -254,6 +288,8 @@ class HomeViewModel @Inject constructor(
     private fun loadSession(sessionId: String) {
         // 取消上一次未完成的加载，避免旧会话的响应覆盖新会话的消息列表。
         loadSessionJob?.cancel()
+        // 加载期间也要取消进行中的标题生成，防止 prime 协程晚到时把 currentSessionId 写回新会话。
+        generateTitleJob?.cancel()
         loadSessionJob = viewModelScope.launch {
             runCatching {
                 homeRepository.loadStoredChat(
@@ -272,21 +308,35 @@ class HomeViewModel @Inject constructor(
 
     /** 清空当前上下文，进入一条尚未发送的新会话。 */
     private fun startNewChat() {
+        generateTitleJob?.cancel()
         _uiState.update { state ->
             state.copy(
                 currentSessionId = null,
                 currentSessionModelId = state.currentModel?.id,
                 sessions = state.sessions.map { it.copy(selected = false) },
+                isGeneratingTitle = false,
             ).withConversation(emptyList())
         }
     }
 
-    /** 将输入框中的文本转换成一条新用户消息，并启动一次完整对话流。 */
+    /**
+     * 把输入框中的文本转换成一条新用户消息，并启动一次完整对话流。
+     *
+     * 对新会话（`currentSessionId == null`）执行串行标题生成：
+     * 先调用 [HomeRepository.generateTitle] 拿到 8~15 字标题，再落盘会话，
+     * 然后才进入 LLM 流式回复。生成失败时 fallback 为「[Constants.DEFAULT_TITLE]」。
+     */
     private fun sendNewMessage() {
         val text = _uiState.value.inputText.trim()
         if (text.isBlank() || _uiState.value.isGuestMessageLimitReached) return
 
-        // 先把用户消息乐观写入本地状态，随后统一走 sendConversation 持久化并请求模型。
+        val currentModel = _uiState.value.currentModel ?: run {
+            // 模型列表为空时（observeModels 失败 / 首屏冷启动）不静默 return，给用户一个明确反馈。
+            _uiState.update { it.copy(errorMessage = "暂无可用模型，请稍后再试") }
+            return
+        }
+
+        // 先把用户消息乐观写入本地状态；后续创建会话 / 编辑重生也会复用同一份 baseMessages。
         val userMessage = ChatMessage(
             id = UUID.randomUUID().toString(),
             role = MessageRole.USER,
@@ -294,11 +344,69 @@ class HomeViewModel @Inject constructor(
         )
         val baseMessages = _uiState.value.messages + userMessage
         _uiState.update {
-            it.copy(
-                inputText = "",
-            ).withConversation(baseMessages)
+            it.copy(inputText = "").withConversation(baseMessages)
         }
-        sendConversation(baseMessages)
+
+        val currentSessionId = _uiState.value.currentSessionId
+        if (currentSessionId == null) {
+            primeNewChatAndContinue(text, currentModel, baseMessages)
+        } else {
+            sendConversation(baseMessages)
+        }
+    }
+
+    /**
+     * 串行流程：生成标题 → 创建会话 → 继续 LLM 对话。
+     *
+     * 仅在 `currentSessionId == null` 时被 [sendNewMessage] 调用；保留乐观写入的 `baseMessages` 不变。
+     */
+    private fun primeNewChatAndContinue(
+        text: String,
+        currentModel: ModelUiModel,
+        baseMessages: List<ChatMessage>,
+    ) {
+        generateTitleJob?.cancel()
+        generateTitleJob = viewModelScope.launch {
+            _uiState.update { it.copy(isGeneratingTitle = true) }
+            val title = try {
+                homeRepository.generateTitle(text, currentModel.id)
+            } catch (e: CancellationException) {
+                _uiState.update { it.copy(isGeneratingTitle = false) }
+                throw e
+            } catch (e: Exception) {
+                Log.w(tag, "sendNewMessage: generateTitle failed", e)
+                Constants.DEFAULT_TITLE
+            }
+            _uiState.update { it.copy(isGeneratingTitle = false) }
+
+            val useRemote = authRepository.session.value.isLoggedIn
+            // 创建远端 / 本地会话（含首条用户消息），拿到 sessionId 再交给 sendConversation。
+            val saved = runCatching {
+                homeRepository.saveStoredChat(
+                    sessionId = null,
+                    title = title,
+                    modelId = currentModel.id,
+                    messages = baseMessages,
+                    useRemote = useRemote,
+                )
+            }.onFailure {
+                Log.w(tag, "sendNewMessage: saveStoredChat failed", it)
+            }.getOrNull()
+
+            if (saved == null) {
+                // 会话创建失败时不再继续走 LLM，避免 currentSessionId == null 时流式回复落不到正确位置。
+                _uiState.update {
+                    it.copy(errorMessage = "创建会话失败，请重试")
+                }
+                return@launch
+            }
+            // 只有当用户没在 prime 期间切换会话（即 currentSessionId 仍为 null）时，
+            // 才把 saved.sessionId 写为 currentSessionId；用户在标题生成中选其它会话则保留其选择。
+            if (_uiState.value.currentSessionId == null) {
+                _uiState.update { it.copy(currentSessionId = saved.sessionId) }
+            }
+            sendConversation(baseMessages)
+        }
     }
 
     /** 编辑历史用户消息后，从该消息处截断上下文并重新生成后续回答。 */
@@ -355,7 +463,7 @@ class HomeViewModel @Inject constructor(
         if (state.favoriteMessageIds.contains(messageId)) return
 
         val message = state.messages.firstOrNull { it.id == messageId } ?: return
-        val sessionTitle = state.sessions.firstOrNull { it.id == state.currentSessionId }?.title
+        val sessionTitle = state.sessions.firstOrNull { it.id == state.currentSessionId }?.displayTitle
             ?: state.messages.firstOrNull { it.role == MessageRole.USER }?.content?.take(24)
             ?: "当前会话"
 
@@ -373,11 +481,106 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 切换会话置顶状态。
+     *
+     * 本地落盘由 Repository 内部完成（双写远端，失败不影响本地）。
+     * UI 层用乐观更新立刻翻转 `isPinned`，让抽屉重新分组。
+     */
+    private fun setSessionPinned(sessionId: String, pin: Boolean) {
+        val current = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return
+        if (current.isPinned == pin) return
+        _uiState.update { state ->
+            state.copy(sessions = state.sessions.map { session ->
+                if (session.id == sessionId) session.copy(isPinned = pin) else session
+            })
+        }
+        viewModelScope.launch {
+            runCatching {
+                homeRepository.pinSession(
+                    sessionId = sessionId,
+                    isPinned = pin,
+                    useRemote = authRepository.session.value.isLoggedIn,
+                )
+            }.onFailure {
+                Log.w(tag, "setSessionPinned: sessionId=$sessionId pin=$pin", it)
+            }
+        }
+    }
+
+    /** 删除整条会话（含消息与级联收藏）。 */
+    private fun deleteSession(sessionId: String) {
+        _uiState.update { state ->
+            state.copy(
+                sessions = state.sessions.filterNot { it.id == sessionId },
+                currentSessionId = if (state.currentSessionId == sessionId) null else state.currentSessionId,
+            ).withConversation(if (state.currentSessionId == sessionId) emptyList() else state.messages)
+        }
+        viewModelScope.launch {
+            runCatching {
+                homeRepository.deleteSession(
+                    sessionId = sessionId,
+                    useRemote = authRepository.session.value.isLoggedIn,
+                )
+            }.onFailure {
+                Log.w(tag, "deleteSession: sessionId=$sessionId", it)
+            }
+            // 删除当前会话后回退到列表第一条或留空。
+            rebuildCurrentSessionAfterDeletion()
+        }
+    }
+
+    /** 删除当前会话后挑选下一个落点：跳过置顶组，从普通组取最新一条，或回到「无选中」。 */
+    private fun rebuildCurrentSessionAfterDeletion() {
+        val state = _uiState.value
+        if (state.currentSessionId != null) return
+        // 优先选普通组最新一条；普通组为空时才退到置顶组，避免用户删除后跳到半年前置顶的旧会话。
+        val next = state.sessions.firstOrNull { !it.isPinned } ?: state.sessions.firstOrNull()
+        if (next == null) {
+            _uiState.update { it.withConversation(emptyList()) }
+            return
+        }
+        _uiState.update { it.copy(
+            currentSessionId = next.id,
+            sessions = it.sessions.map { session -> session.copy(selected = session.id == next.id) },
+        ) }
+        loadSession(next.id)
+    }
+
+    /** 重命名会话标题。空字符串直接拒绝，避免把会话改成空标题。 */
+    private fun renameSession(sessionId: String, newTitle: String) {
+        val trimmed = newTitle.trim()
+        if (trimmed.isEmpty()) return
+        val current = _uiState.value.sessions.firstOrNull { it.id == sessionId } ?: return
+        if (current.title == trimmed) return
+        // 智能体会话不允许重命名（虽然 UI 已经屏蔽，这里再做一次兜底校验）。
+        if (current.isAgent) return
+        _uiState.update { state ->
+            state.copy(sessions = state.sessions.map { session ->
+                if (session.id == sessionId) session.copy(title = trimmed) else session
+            })
+        }
+        viewModelScope.launch {
+            runCatching {
+                homeRepository.renameSession(
+                    sessionId = sessionId,
+                    newTitle = trimmed,
+                    useRemote = authRepository.session.value.isLoggedIn,
+                )
+            }.onFailure {
+                Log.w(tag, "renameSession: sessionId=$sessionId", it)
+            }
+        }
+    }
+
     /** 将当前会话内容持久化到本地或远端，并回写仓库规范化后的会话状态。 */
     private fun persistConversation(messages: List<ChatMessage>) {
         val currentModel = _uiState.value.currentModel
         if (currentModel == null) {
-            _uiState.update { it.withConversation(messages) }
+            // 编辑/重生/删除消息这类「不需要 LLM」的场景下，即使没模型也要保留 UI 列表。
+            _uiState.update {
+                it.withConversation(messages).copy(errorMessage = "暂无可用模型，本次仅在本地展示")
+            }
             return
         }
 
@@ -387,6 +590,7 @@ class HomeViewModel @Inject constructor(
             val storedChat = runCatching {
                 homeRepository.saveStoredChat(
                     sessionId = currentSessionId,
+                    title = null,
                     modelId = currentModel.id,
                     messages = messages,
                     useRemote = useRemote,
@@ -411,7 +615,10 @@ class HomeViewModel @Inject constructor(
      * 该流程会先落盘用户侧消息，再把 SSE 返回的思考片段和正文片段折叠成同一条助手消息。
      */
     private fun sendConversation(baseMessages: List<ChatMessage>) {
-        val currentModel = _uiState.value.currentModel ?: return
+        val currentModel = _uiState.value.currentModel ?: run {
+            _uiState.update { it.copy(errorMessage = "暂无可用模型，请稍后再试") }
+            return
+        }
         val useRemote = authRepository.session.value.isLoggedIn
 
         // 同时只允许一个进行中的请求，避免新旧请求相互覆盖或重复落盘。
@@ -422,6 +629,7 @@ class HomeViewModel @Inject constructor(
             val savedBaseChat = runCatching {
                 homeRepository.saveStoredChat(
                     sessionId = _uiState.value.currentSessionId,
+                    title = null,
                     modelId = currentModel.id,
                     messages = baseMessages,
                     useRemote = useRemote,
@@ -545,6 +753,7 @@ class HomeViewModel @Inject constructor(
                 val finalStoredChat = runCatching {
                     homeRepository.saveStoredChat(
                         sessionId = persistedSessionId,
+                        title = null,
                         modelId = currentModel.id,
                         messages = conversation,
                         useRemote = useRemote,
@@ -569,6 +778,7 @@ class HomeViewModel @Inject constructor(
                     runCatching {
                         homeRepository.saveStoredChat(
                             sessionId = persistedSessionId,
+                            title = null,
                             modelId = currentModel.id,
                             messages = conversation,
                             useRemote = useRemote,
@@ -611,8 +821,50 @@ class HomeViewModel @Inject constructor(
         return SessionUiModel(
             id = id,
             title = title,
-            lastMessageTime = updateTime,
+            isPinned = isPinned,
+            updatedAt = updateTime,
         )
+    }
+
+    /**
+     * 把远端 chat DTO 转成 SessionUiModel。
+     *
+     * - [localPinnedIds]：本地已置顶的会话 ID 集合，用于「远端无字段时以本地为准」规则；
+     * - [agentMap]：已缓存的智能体列表，用于合并 `chatTarget` → 智能体展示信息。
+     */
+    private fun ChatDto.toSessionUiModel(
+        agentMap: Map<String, AgentUiModel>,
+        localPinnedIds: Set<String>,
+    ): SessionUiModel {
+        val agentInfo = chatTarget?.id?.let { agentMap[it] }
+        val effectivePinned = isPinned ?: (id in localPinnedIds)
+        return SessionUiModel(
+            id = id,
+            title = title,
+            isPinned = effectivePinned,
+            agentId = chatTarget?.id,
+            agentName = agentInfo?.name,
+            updatedAt = updatedAt ?: createdAt ?: System.currentTimeMillis(),
+        )
+    }
+
+    private fun AgentInfoDto.toAgentUiModel(): AgentUiModel = AgentUiModel(
+        id = id,
+        name = name,
+    )
+
+    /** 智能体列表变更后刷新已有会话条目的展示字段（名称）。 */
+    private fun List<SessionUiModel>.mergeAgentInfo(agents: List<AgentUiModel>): List<SessionUiModel> {
+        if (isEmpty() || agents.isEmpty()) return this
+        val agentMap = agents.associateBy { it.id }
+        // 守卫：智能体 ID 集合未变化时跳过全量重建，避免 observeAgents 重复触发时的不必要 copy。
+        val existingIds = mapNotNull { it.agentId }.toSet()
+        val newIds = agents.map { it.id }.toSet()
+        if (existingIds.isNotEmpty() && existingIds == newIds) return this
+        return map { session ->
+            val agent = session.agentId?.let { agentMap[it] }
+            if (agent == null) session else session.copy(agentName = agent.name)
+        }
     }
 
     private fun List<ChatMessage>.upsertAssistantMessage(message: ChatMessage): List<ChatMessage> {

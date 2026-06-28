@@ -90,31 +90,59 @@ data class AgentsResponse(
 @Serializable
 data class ChatDto(
     val id: String,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val userId: String? = null,
     val title: String,
     val model: String,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val chatTarget: ChatTargetDto? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val messages: List<ChatMessageDto>? = null,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val createdAt: Long? = null,
-    val updatedAt: Long? = null
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val updatedAt: Long? = null,
+    /** 是否置顶。旧版服务端不返回该字段时为 null，客户端以本地为准。 */
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val isPinned: Boolean? = null,
 )
 
 /** 创建聊天记录请求体 */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class CreateChatRequest(
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val title: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val model: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val messages: List<ChatMessageDto>? = null,
-    val chatTarget: ChatTargetDto? = null
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val chatTarget: ChatTargetDto? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val isPinned: Boolean? = null,
 )
 
 /** 更新聊天记录请求体 */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class UpdateChatRequest(
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val title: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val model: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
     val messages: List<ChatMessageDto>? = null,
-    val chatTarget: ChatTargetDto? = null
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val chatTarget: ChatTargetDto? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val isPinned: Boolean? = null,
 )
 
 /** GET /api/chats 返回 */

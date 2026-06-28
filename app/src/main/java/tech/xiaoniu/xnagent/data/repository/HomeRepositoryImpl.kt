@@ -12,11 +12,14 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import tech.xiaoniu.xnagent.common.Constants
 import tech.xiaoniu.xnagent.common.util.currentTimeF
 import tech.xiaoniu.xnagent.data.ModelConfig
 import tech.xiaoniu.xnagent.data.local.dao.ChatDao
 import tech.xiaoniu.xnagent.data.local.entity.ChatMessage as LocalChatMessage
 import tech.xiaoniu.xnagent.data.local.entity.Session
+import tech.xiaoniu.xnagent.data.local.PendingRetryOp
+import tech.xiaoniu.xnagent.data.local.PendingRetryQueue
 import tech.xiaoniu.xnagent.data.remote.api.ChatApi
 import tech.xiaoniu.xnagent.data.remote.api.StreamChatApi
 import tech.xiaoniu.xnagent.data.remote.dto.AgentsResponse
@@ -30,6 +33,7 @@ import tech.xiaoniu.xnagent.data.remote.dto.CurrentChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.DeleteChatResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ModelsResponse
 import tech.xiaoniu.xnagent.data.remote.dto.SseChunk
+import tech.xiaoniu.xnagent.data.remote.dto.ThinkingConfig
 import tech.xiaoniu.xnagent.data.remote.dto.UpdateChatRequest
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.MessageRole
@@ -51,6 +55,8 @@ class HomeRepositoryImpl @Inject constructor(
     private val streamChatApi: StreamChatApi,
     private val chatApi: ChatApi,
     private val chatDao: ChatDao,
+    private val favoriteRepository: FavoriteRepository,
+    private val pendingRetryQueue: PendingRetryQueue,
 ) : HomeRepository {
     private val TAG = javaClass.simpleName
 
@@ -136,6 +142,57 @@ class HomeRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * 通过现有 `/api/chat` 流式接口调用 LLM，把首条用户消息提炼为标题。
+     *
+     * 复用 [sendToLLM] 的解析思路，但只关心正文片段，遇到首帧正文就开启累积，遇到 `[DONE]` 收尾。
+     * 标题生成只会产生单串最终结果，因此暴露为挂起函数比 Flow 更稳定。
+     */
+    override suspend fun generateTitle(firstUserMessage: String, modelId: String): String = withContext(Dispatchers.IO) {
+        val request = buildSummaryRequest(firstUserMessage, modelId)
+        val responseBody = try {
+            streamChatApi.chat(request)
+        } catch (e: Exception) {
+            Log.w(TAG, "generateTitle: request failed", e)
+            return@withContext sanitizeTitle("")
+        }
+        val raw = StringBuilder()
+        try {
+            responseBody.byteStream()
+                .bufferedReader()
+                .use { reader ->
+                    var line: String?
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        line = reader.readLine() ?: break
+                        if (line.isBlank()) continue
+                        when {
+                            line.startsWith(":") -> { /* SSE 注释，忽略 */ }
+                            line.trim() == "data: [DONE]" -> break
+                            line.startsWith("data: ") -> {
+                                val data = line.substring("data: ".length)
+                                runCatching {
+                                    json.decodeFromString(SseChunk.serializer(), data)
+                                }.onSuccess { chunk ->
+                                    chunk.content?.let { raw.append(it) }
+                                }.onFailure { e ->
+                                    Log.w(TAG, "generateTitle: parse chunk failed", e)
+                                }
+                            }
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "generateTitle: read response failed", e)
+        } finally {
+            try {
+                responseBody.close()
+            } catch (_: Exception) {
+            }
+        }
+        sanitizeTitle(raw.toString())
+    }
+
     // ---- 会话列表 ----
 
     override val sessions: Flow<List<Session>> = chatDao.querySessionList()
@@ -188,27 +245,38 @@ class HomeRepositoryImpl @Inject constructor(
 
     override suspend fun loadStoredChat(sessionId: String, useRemote: Boolean): StoredChat? = withContext(Dispatchers.IO) {
         if (useRemote) {
+            // ChatResponse.chat 由 Retrofit/序列化保证非空；远端 404 由 OkHttp 层抛 HttpException，
+            // 不会进到这一步。生产中若需要处理「远端会话被同步删」的场景，应在 api 层返回 ChatResponse{chat=null}，
+            // 再调整本方法。
             chatApi.getChat(sessionId).chat.toStoredChat()
         } else {
-            val session = chatDao.getSession(sessionId) ?: return@withContext null
-            session.toStoredChat(chatDao.getChatMessagesBySessionId(session.id))
+            val session = chatDao.getSession(sessionId)
+            if (session == null) {
+                Log.w(TAG, "loadStoredChat: session=$sessionId not found in local db")
+                null
+            } else {
+                session.toStoredChat(chatDao.getChatMessagesBySessionId(session.id))
+            }
         }
     }
 
     override suspend fun saveStoredChat(
         sessionId: String?,
+        title: String?,
         modelId: String,
         messages: List<ChatMessage>,
         useRemote: Boolean,
     ): StoredChat = withContext(Dispatchers.IO) {
-        // 会话标题始终由首条用户消息推导，保证本地和远端展示一致。
-        val title = buildChatTitle(messages)
+        // 标题语义：
+        // - 新建（sessionId == null）：由 ViewModel 在串行流程中提前生成，这里直接写入。
+        // - 更新（sessionId != null）：走 partial update，title 字段不传，依赖后端 / 本地保留原标题。
+        //   避免流式落盘 / 编辑 / 重生 / 删除消息等后续路径把 LLM 生成的标题冲成「新对话」。
+        val requestMessages = messages.map { it.toChatMessageDto() }
         if (useRemote) {
-            val requestMessages = messages.map { it.toChatMessageDto() }
             val response = if (sessionId.isNullOrBlank()) {
                 chatApi.createChat(
                     CreateChatRequest(
-                        title = title,
+                        title = title ?: Constants.DEFAULT_TITLE,
                         model = modelId,
                         messages = requestMessages,
                     )
@@ -217,7 +285,7 @@ class HomeRepositoryImpl @Inject constructor(
                 chatApi.updateChat(
                     sessionId,
                     UpdateChatRequest(
-                        title = title,
+                        // partial update：不传 title，依赖后端保留远端标题。
                         model = modelId,
                         messages = requestMessages,
                     )
@@ -227,12 +295,14 @@ class HomeRepositoryImpl @Inject constructor(
         } else {
             val now = System.currentTimeMillis()
             val localSessionId = sessionId ?: UUID.randomUUID().toString()
+            // 已有会话保留本地原标题 / createTime，避免流式落盘冲掉 LLM 标题。
+            val existing = if (sessionId != null) chatDao.getSession(sessionId) else null
             // replaceSessionMessages 会整体替换该会话消息，适合编辑/重生后的截断重写。
             val session = Session(
                 id = localSessionId,
-                title = title,
+                title = existing?.title ?: title ?: Constants.DEFAULT_TITLE,
                 modelId = modelId,
-                createTime = now,
+                createTime = existing?.createTime ?: now,
                 updateTime = now,
             )
             chatDao.replaceSessionMessages(
@@ -248,6 +318,84 @@ class HomeRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * 切换会话置顶状态。本地优先落盘，远端失败入队 [PendingRetryQueue] 等待下次刷新时重试。
+     */
+    override suspend fun pinSession(sessionId: String, isPinned: Boolean, useRemote: Boolean) = withContext(Dispatchers.IO) {
+        chatDao.updateSessionPinned(sessionId, isPinned)
+        if (useRemote) {
+            runCatching {
+                chatApi.updateChat(sessionId, UpdateChatRequest(isPinned = isPinned))
+            }.onFailure {
+                Log.w(TAG, "pinSession: remote update failed for $sessionId", it)
+                pendingRetryQueue.add(PendingRetryOp.Pin(sessionId, isPinned))
+            }
+        }
+    }
+
+    /**
+     * 重命名会话标题。本地优先落盘，同时刷新 updateTime 以触发列表重排。
+     */
+    override suspend fun renameSession(sessionId: String, newTitle: String, useRemote: Boolean) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        chatDao.updateSessionTitle(sessionId, newTitle, now)
+        if (useRemote) {
+            runCatching {
+                chatApi.updateChat(sessionId, UpdateChatRequest(title = newTitle))
+            }.onFailure {
+                Log.w(TAG, "renameSession: remote update failed for $sessionId", it)
+                pendingRetryQueue.add(PendingRetryOp.Rename(sessionId, newTitle))
+            }
+        }
+    }
+
+    /**
+     * 删除会话。本地事务删除消息与会话，远端调用删除接口，最后级联清理收藏。
+     */
+    override suspend fun deleteSession(sessionId: String, useRemote: Boolean) = withContext(Dispatchers.IO) {
+        chatDao.deleteSessionWithMessages(sessionId)
+        if (useRemote) {
+            runCatching {
+                chatApi.deleteChat(sessionId)
+            }.onFailure {
+                Log.w(TAG, "deleteSession: remote delete failed for $sessionId", it)
+                pendingRetryQueue.add(PendingRetryOp.Delete(sessionId))
+            }
+        }
+        favoriteRepository.removeFavoritesBySessionId(sessionId)
+    }
+
+    /**
+     * 重试队列中所有待重试操作；成功后出队，失败保留等待下次。
+     * 由 HomeViewModel 在 refreshRemoteSessions 之前触发。
+     */
+    override suspend fun retryPendingOperations() = withContext(Dispatchers.IO) {
+        pendingRetryQueue.operations.value.forEach { op ->
+            runCatching {
+                when (op) {
+                    is PendingRetryOp.Pin ->
+                        chatApi.updateChat(op.sessionId, UpdateChatRequest(isPinned = op.isPinned))
+                    is PendingRetryOp.Rename ->
+                        chatApi.updateChat(op.sessionId, UpdateChatRequest(title = op.newTitle))
+                    is PendingRetryOp.Delete ->
+                        chatApi.deleteChat(op.sessionId)
+                }
+            }.onSuccess {
+                pendingRetryQueue.remove(op)
+            }.onFailure {
+                Log.w(TAG, "retryPendingOperations: op=$op failed", it)
+            }
+        }
+    }
+
+    override suspend fun getLocalPinnedSessionIds(): Set<String> = withContext(Dispatchers.IO) {
+        chatDao.getSessionList()
+            .asSequence()
+            .filter { it.isPinned }
+            .map { it.id }
+            .toSet()
+    }
+
     override suspend fun syncLocalChatsToRemote() = withContext(Dispatchers.IO) {
         val localSessions = chatDao.getSessionList()
         localSessions.forEach { session ->
@@ -260,6 +408,7 @@ class HomeRepositoryImpl @Inject constructor(
                             title = session.title,
                             model = session.modelId,
                             messages = messages.map { it.toChatMessageDto() },
+                            isPinned = session.isPinned,
                         )
                     )
                 }
@@ -366,18 +515,51 @@ class HomeRepositoryImpl @Inject constructor(
         }
     }
 
-    /** 根据首条用户消息生成会话标题，过长时截断。 */
-    private fun buildChatTitle(messages: List<ChatMessage>): String {
-        val firstUserMessage = messages.firstOrNull { it.role == MessageRole.USER }
-            ?.content
-            ?.trim()
-            .orEmpty()
-        if (firstUserMessage.isBlank()) return "新对话"
+    /** 拼装标题生成请求。 */
+    private fun buildSummaryRequest(content: String, modelId: String): ChatRequest {
+        return ChatRequest(
+            model = modelId,
+            messages = listOf(
+                ChatMessageDto(
+                    role = "system",
+                    content = SUMMARY_SYSTEM_PROMPT,
+                ),
+                ChatMessageDto(
+                    role = "user",
+                    content = content,
+                ),
+            ),
+            thinking = ThinkingConfig(ThinkingConfig.Type.DISABLED),
+        )
+    }
 
-        return if (firstUserMessage.length <= 20) {
-            firstUserMessage
-        } else {
-            firstUserMessage.take(20) + "..."
+    /**
+     * 清洗模型输出：去空白 / 包裹引号 / markdown 代码块围栏；
+     * 长度 > [TITLE_MAX_LENGTH] 时截断；空结果回退到 [Constants.DEFAULT_TITLE]。
+     */
+    private fun sanitizeTitle(raw: String): String {
+        var text = raw.trim()
+        if (text.isEmpty()) return Constants.DEFAULT_TITLE
+
+        // 去掉 markdown 代码块围栏与首尾成对引号。
+        text = text.removePrefix("```").removeSuffix("```").trim()
+        if ((text.startsWith("\"") && text.endsWith("\"")) ||
+            (text.startsWith("'") && text.endsWith("'")) ||
+            (text.startsWith("「") && text.endsWith("」")) ||
+            (text.startsWith("『") && text.endsWith("』"))) {
+            text = text.substring(1, text.length - 1).trim()
         }
+        if (text.isEmpty()) return Constants.DEFAULT_TITLE
+        return if (text.length <= TITLE_MAX_LENGTH) text else text.take(TITLE_MAX_LENGTH)
+    }
+
+    private companion object {
+        /** 标题生成 system prompt：要求 LLM 输出 8~15 字纯文本。 */
+        const val SUMMARY_SYSTEM_PROMPT =
+            "请把以下用户消息提炼为一个 8 到 15 字的简洁中文标题，" +
+                "不要使用标点符号、引号或额外说明，只输出标题本身。"
+
+        /** 标题最大长度，与需求文档保持一致。 */
+        const val TITLE_MAX_LENGTH = 15
     }
 }

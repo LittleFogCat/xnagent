@@ -76,8 +76,13 @@ MainDestination.Settings                          │       │
 `HomeScreen.HomeScreenContent` 使用 `ModalNavigationDrawer`，抽屉内容 `DrawerContent` 自上而下：
 
 1. 标题「聊天记录」+「新对话」按钮；
-2. 历史会话列表（按 `groupByDate()` 分组：今天 / 昨天 / 本周 / 更早）；
-3. 底部用户信息区：
+2. 会话列表按置顶分组：`HomeUiStateExt.partitionByPin()` 把 `SessionUiModel` 拆为 `(pinned, normal)` 两组：
+   - 置顶组仅在 `pinned.isNotEmpty()` 时渲染「置顶」小标题（`labelMedium`）；
+   - 普通组不显示小标题，直接列条目；
+   - 组内各自按 `updatedAt DESC` 排序，DAO 层 `ORDER BY isPinned DESC, updateTime DESC` 已保证总序。
+3. 条目右侧附智能体头像（智能体会话）或无头像（普通会话），标题为 `displayTitle`（智能体取 `agentName`，否则取 `title`）；
+4. 条目长按弹出下拉菜单（重命名 / 置顶切换 / 删除，智能体不显示重命名）；
+5. 底部用户信息区：
    - 已登录：显示昵称、邮箱、「设置」按钮；
    - 游客：显示「游客」+「前往登录」按钮。
 
@@ -87,12 +92,14 @@ MainDestination.Settings                          │       │
 
 | 选项 | 用户消息 | 助手消息 |
 | --- | --- | --- |
-| 复制 | ❌ | ✅ |
-| 收藏 / 取消收藏 | ✅ | ✅ |
-| 重新生成 | ❌ | ✅ |
-| 编辑（仅 USER） | ✅ | ❌ |
+| 复制 | ✅ | ✅ |
+| 修改并重发 | ✅ | ❌ |
 | 选择文字 | ✅ | ✅ |
+| 收藏 / 已收藏 | ✅ | ✅ |
 | 删除 | ✅ | ✅ |
+| 分享 | ✅ | ✅ |
+
+分享通过 `Intent.ACTION_SEND` + `text/plain` + `Intent.createChooser` 调起系统分享面板，内容为消息正文纯文本（无角色前缀 / 时间戳）。
 
 ## 5. 路由与认证态的耦合
 

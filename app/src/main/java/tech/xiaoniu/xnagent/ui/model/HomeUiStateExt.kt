@@ -1,39 +1,15 @@
 package tech.xiaoniu.xnagent.ui.model
 
 /**
- * 将会话列表按日期分组。
+ * 把会话列表按置顶状态划分为两组。
  *
- * 分组包括：
- * - 今天
- * - 昨天
- * - 7天内
- * - 30天内
- * - 更早的，按照月份分组，格式：yyyy年MM月
+ * - [Pair.first]：置顶会话，按更新时间倒序；
+ * - [Pair.second]：普通会话，按更新时间倒序。
+ *
+ * 调用方负责在置顶组非空时才渲染「置顶」小标题；置顶组为空时 UI 跳过小标题。
  */
-fun List<SessionUiModel>.groupByDate(): List<SessionGroup> {
-    val now = System.currentTimeMillis()
-    val todayStart = now - (now % (24 * 60 * 60 * 1000))
-    val yesterdayStart = todayStart - 24 * 60 * 60 * 1000
-    val sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
-    val thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000
-
-    val groups = mutableMapOf<String, MutableList<SessionUiModel>>()
-
-    for (session in this) {
-        val groupKey = when {
-            session.lastMessageTime >= todayStart -> "今天"
-            session.lastMessageTime >= yesterdayStart -> "昨天"
-            session.lastMessageTime >= sevenDaysAgo -> "7天内"
-            session.lastMessageTime >= thirtyDaysAgo -> "30天内"
-            else -> {
-                // 更早的，按照月份分组
-                val date = java.util.Date(session.lastMessageTime)
-                val calendar = java.util.Calendar.getInstance().apply { time = date }
-                "${calendar.get(java.util.Calendar.YEAR)}年${calendar.get(java.util.Calendar.MONTH) + 1}月"
-            }
-        }
-        groups.getOrPut(groupKey) { mutableListOf() }.add(session)
-    }
-
-    return groups.map { SessionGroup(it.key, it.value) }
+fun List<SessionUiModel>.partitionByPin(): Pair<List<SessionUiModel>, List<SessionUiModel>> {
+    val pinned = filter { it.isPinned }.sortedByDescending { it.updatedAt }
+    val normal = filterNot { it.isPinned }.sortedByDescending { it.updatedAt }
+    return pinned to normal
 }

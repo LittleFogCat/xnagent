@@ -2,6 +2,8 @@ package tech.xiaoniu.xnagent.ui.screen.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,26 +13,32 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.Air
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,7 +46,12 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -50,8 +63,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -59,6 +76,7 @@ import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,7 +92,7 @@ import tech.xiaoniu.xnagent.ui.model.HomeUiState
 import tech.xiaoniu.xnagent.ui.model.MessageRole
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
 import tech.xiaoniu.xnagent.ui.model.SessionUiModel
-import tech.xiaoniu.xnagent.ui.model.groupByDate
+import tech.xiaoniu.xnagent.ui.model.partitionByPin
 
 
 /**
@@ -114,25 +132,13 @@ fun HomeScreen(
         keyboardController = keyboardController,
         onOpenSettings = onOpenSettings,
         onOpenLogin = onOpenLogin,
-//        agentMode = agentMode,
-//        inputText = inputText,
-//        messages = messages,
-//        currentModel = currentModel,
-//        models = viewModel.availableModels,
-//        onModelSelected = { viewModel.selectModel(it) },
-//        onAgentModeChange = { viewModel.setAgentMode(it) },
-//        onInputChange = { viewModel.updateInput(it) },
-//        onSend = {
-//            viewModel.sendMessage()
-//            keyboardController?.hide()
-//        }
     )
 }
 
 /**
  * 将 UI 提取到一个不依赖 Hilt/ViewModel 的可重用 composable 中，以便在 Preview 中使用。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun HomeScreenContent(
     modifier: Modifier = Modifier,
@@ -145,8 +151,24 @@ fun HomeScreenContent(
 ) {
     val drawerState = rememberDrawerState(initialDrawerValue)
     val drawerScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    // 抽屉区域负责会话切换、创建新对话以及进入设置/登录。
+    // 抽屉中正在展示菜单的会话 ID；为 null 表示菜单关闭。
+    var menuSessionId by remember { mutableStateOf<String?>(null) }
+    // 正在重命名的会话；非 null 时弹出重命名对话框。
+    var renameTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    // 一次性错误事件：errorMessage 变化时弹 Snackbar，然后立即消费避免重复展示。
+    LaunchedEffect(uiState.errorMessage) {
+        val message = uiState.errorMessage
+        if (!message.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+            onAction(HomeIntent.ConsumeError)
+        }
+    }
+
+    val currentSession = uiState.sessions.firstOrNull { it.id == uiState.currentSessionId }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = true,
@@ -154,6 +176,8 @@ fun HomeScreenContent(
             DrawerContent(
                 modifier = modifier,
                 sessions = uiState.sessions,
+                menuSessionId = menuSessionId,
+                onDismissMenu = { menuSessionId = null },
                 onNewChat = {
                     onAction(HomeIntent.CreateNewChat)
                     drawerScope.launch { drawerState.close() }
@@ -161,6 +185,19 @@ fun HomeScreenContent(
                 onSessionClick = {
                     onAction(HomeIntent.SelectSession(it))
                     drawerScope.launch { drawerState.close() }
+                },
+                onSessionLongPress = { menuSessionId = it },
+                onRenameSession = { session ->
+                    menuSessionId = null
+                    renameTarget = session.id to session.title
+                },
+                onTogglePinSession = { session ->
+                    onAction(HomeIntent.SetSessionPinned(session.id, !session.isPinned))
+                    menuSessionId = null
+                },
+                onDeleteSession = { session ->
+                    onAction(HomeIntent.DeleteSession(session.id))
+                    menuSessionId = null
                 },
                 isGuest = uiState.isGuest,
                 viewerName = uiState.viewerName,
@@ -180,8 +217,8 @@ fun HomeScreenContent(
             modifier = modifier
                 .fillMaxSize()
                 .imePadding(),
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) { data -> Snackbar(snackbarData = data) } },
             topBar = {
-                // 顶部栏提供抽屉开关、当前模型选择和新建会话入口。
                 TopAppBar(
                     title = {
                         Row(
@@ -213,35 +250,48 @@ fun HomeScreenContent(
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Column(
+                            // 顶部标题按会话类型切换：新对话 / 智能体名称 / 普通会话标题；
+                            // 单行省略避免顶栏被长标题撑高。
+                            Text(
+                                text = topBarTitle(uiState, currentSession),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyLarge
+                                    .copy(fontWeight = FontWeight.Bold),
                                 modifier = Modifier.weight(1f),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "XN",
-                                    style = MaterialTheme.typography.bodyLarge
-                                        .copy(fontWeight = FontWeight.Bold)
+                            )
+                            // 标题生成中提示：用户已经发出首条消息、正在等 LLM 返回标题。
+                            if (uiState.isGeneratingTitle) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                                DropdownSelector(
-                                    items = uiState.availableModels,
-                                    onItemSelect = { onAction(HomeIntent.SelectModel(it)) },
-                                    itemToText = { label },
-                                    border = false,
-                                    contentPadding = PaddingValues(),
-                                    modifier = Modifier
-                                        .size(140.dp, 30.dp)
-                                ) {
-                                    Text(
-                                        text = uiState.currentModel?.name ?: "",
-                                        maxLines = 1,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
                             }
                         }
                     },
                     actions = {
+                        // 模型选择器从标题区搬到 actions，与标题文本解耦避免视觉拥挤。
+                        // 用 widthIn + heightIn 让宽度在小屏上自适应，避免与标题文本争抢空间导致截断。
+                        DropdownSelector(
+                            items = uiState.availableModels,
+                            onItemSelect = { onAction(HomeIntent.SelectModel(it)) },
+                            itemToText = { label },
+                            border = false,
+                            contentPadding = PaddingValues(),
+                            modifier = Modifier
+                                .widthIn(min = 88.dp, max = 140.dp)
+                                .heightIn(min = 36.dp, max = 36.dp)
+                        ) {
+                            Text(
+                                text = uiState.currentModel?.name ?: "",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         IconButton(
                             onClick = { onAction(HomeIntent.CreateNewChat) },
                             colors = IconButtonDefaults.iconButtonColors(
@@ -258,17 +308,6 @@ fun HomeScreenContent(
                                     .padding(6.dp)
                             )
                         }
-//                        DropdownSelector(
-//                            items = AgentMode.entries.toList(),
-//                            onItemSelect = { onAction(HomeIntent.SetAgentMode(it)) },
-//                            itemToText = { name },
-//                            modifier = Modifier.size(120.dp, 40.dp)
-//                        ) {
-//                            Text(
-//                                uiState.agentMode.name,
-//                                modifier = Modifier.fillMaxWidth(),
-//                            )
-//                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.White
@@ -312,8 +351,9 @@ fun HomeScreenContent(
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // 文案与 HomeViewModel.GUEST_USER_MESSAGE_LIMIT 保持一致，未来抽 strings.xml 时一起迁移。
                         Text(
-                            text = "游客模式每个会话最多发送 10 条消息，当前已发送 ${uiState.guestUserMessageCount} 条。",
+                            text = "游客模式每个会话最多发送 ${HomeViewModel.GUEST_USER_MESSAGE_LIMIT} 条消息，当前已发送 ${uiState.guestUserMessageCount} 条。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
@@ -429,19 +469,74 @@ fun HomeScreenContent(
             }
         }
     }
+
+    // 长按菜单改为内嵌到 SessionRow 内部（见 [SessionRow]），这样 DropdownMenu 会锚定到该行，
+    // 不再需要在 HomeScreenContent 顶层另起一个无 anchor 的菜单。
+
+    // 重命名对话框：标题预填当前 title，trim 后非空才允许保存。
+    renameTarget?.let { (targetId, initialTitle) ->
+        var draft by remember(targetId, initialTitle) { mutableStateOf(initialTitle) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名会话") },
+            text = {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    maxLines = 1,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAction(HomeIntent.RenameSession(targetId, draft.trim()))
+                        renameTarget = null
+                    },
+                    enabled = draft.trim().isNotEmpty(),
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+}
+
+/**
+ * 顶部栏标题派生。
+ *
+ * - 未选中会话或正在新建：返回「新对话」；
+ * - 智能体会话：返回智能体名称；
+ * - 普通会话：返回标题。
+ */
+private fun topBarTitle(uiState: HomeUiState, currentSession: SessionUiModel?): String {
+    if (uiState.currentSessionId == null) return "新对话"
+    return currentSession?.displayTitle ?: "新对话"
 }
 
 /**
  * 左侧抽屉内容。
  *
- * 上半区展示历史会话，下半区展示当前用户入口与设置入口。
+ * 上半区按置顶分组展示历史会话，下半区展示当前用户入口与设置入口。
  */
 @Composable
 fun DrawerContent(
     modifier: Modifier = Modifier,
     sessions: List<SessionUiModel>,
+    menuSessionId: String? = null,
+    onDismissMenu: () -> Unit = {},
     onNewChat: () -> Unit = {},
     onSessionClick: (String) -> Unit = {},
+    onSessionLongPress: (String) -> Unit = {},
+    onRenameSession: (SessionUiModel) -> Unit = {},
+    onTogglePinSession: (SessionUiModel) -> Unit = {},
+    onDeleteSession: (SessionUiModel) -> Unit = {},
     isGuest: Boolean = false,
     viewerName: String = "",
     viewerEmail: String = "",
@@ -472,7 +567,6 @@ fun DrawerContent(
             }
         }
 
-        // 会话列表按日期分组展示，便于在历史记录较多时快速定位。
         if (sessions.isEmpty()) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -483,15 +577,15 @@ fun DrawerContent(
                 Text("暂无会话", style = MaterialTheme.typography.bodyMedium)
             }
         } else {
-            val sessionGroups = sessions.groupByDate()
+            val (pinnedSessions, normalSessions) = sessions.partitionByPin()
             LazyColumn(
                 modifier = Modifier.weight(1f)
             ) {
-                sessionGroups.forEach { group ->
-                    val groupId = "header_${group.groupTitle}"
-                    item(key = groupId) {
+                // 置顶组：仅在存在置顶会话时显示小标题；置顶会话按更新时间倒序（partitionByPin 已处理）。
+                if (pinnedSessions.isNotEmpty()) {
+                    item(key = "header_pinned") {
                         Text(
-                            text = group.groupTitle,
+                            text = "置顶",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
@@ -500,29 +594,39 @@ fun DrawerContent(
                         )
                     }
                     items(
-                        count = group.sessions.size,
-                        key = {
-                            "session_${group.sessions[it].id}"
-                        },
+                        count = pinnedSessions.size,
+                        key = { "pinned_${pinnedSessions[it].id}" },
                     ) { i ->
-                        val session = group.sessions[i]
-                        Text(
-                            text = session.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    color = if (session.selected) {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    } else {
-                                        Color.Transparent
-                                    },
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .clickable { onSessionClick(session.id) }
-                                .padding(horizontal = 24.dp, vertical = 10.dp)
+                        val session = pinnedSessions[i]
+                        SessionRow(
+                            session = session,
+                            isMenuExpanded = menuSessionId == session.id,
+                            onSessionClick = onSessionClick,
+                            onSessionLongPress = onSessionLongPress,
+                            onDismissMenu = onDismissMenu,
+                            onRename = { onRenameSession(session) },
+                            onTogglePin = { onTogglePinSession(session) },
+                            onDelete = { onDeleteSession(session) },
                         )
                     }
+                }
+
+                // 普通组：无小标题，直接列出；时间倒序（partitionByPin 已处理）。
+                items(
+                    count = normalSessions.size,
+                    key = { "normal_${normalSessions[it].id}" },
+                ) { i ->
+                    val session = normalSessions[i]
+                    SessionRow(
+                        session = session,
+                        isMenuExpanded = menuSessionId == session.id,
+                        onSessionClick = onSessionClick,
+                        onSessionLongPress = onSessionLongPress,
+                        onDismissMenu = onDismissMenu,
+                        onRename = { onRenameSession(session) },
+                        onTogglePin = { onTogglePinSession(session) },
+                        onDelete = { onDeleteSession(session) },
+                    )
                 }
             }
         }
@@ -596,6 +700,89 @@ fun DrawerContent(
     }
 }
 
+/**
+ * 抽屉中的单个会话条目。
+ *
+ * - 智能体会话：左侧展示「智能体首字母」占位头像 + 智能体名称；
+ * - 普通会话：不显示头像，直接显示标题；
+ * - 长按触发 [onSessionLongPress]，短按触发 [onSessionClick]；
+ * - 单行省略避免侧栏被长标题撑爆。
+ * - 长按菜单作为子组件渲染在本行 Box 内，DropdownMenu 的 anchor 自动绑定到该行，
+ *   避免脱离 anchor 跑到屏幕中央或原点的问题。
+ */
+@Composable
+private fun SessionRow(
+    session: SessionUiModel,
+    isMenuExpanded: Boolean,
+    onSessionClick: (String) -> Unit,
+    onSessionLongPress: (String) -> Unit,
+    onDismissMenu: () -> Unit,
+    onRename: () -> Unit,
+    onTogglePin: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = if (session.selected) {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    } else {
+                        Color.Transparent
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                )
+                .combinedClickable(
+                    onClick = { onSessionClick(session.id) },
+                    onLongClick = { onSessionLongPress(session.id) },
+                )
+                .padding(horizontal = if (session.isAgent) 12.dp else 24.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (session.isAgent) {
+                UserAvatar(
+                    label = session.agentName ?: session.displayTitle,
+                    size = 28.dp,
+                )
+            }
+            Text(
+                text = session.displayTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        DropdownMenu(
+            expanded = isMenuExpanded,
+            onDismissRequest = onDismissMenu,
+        ) {
+            if (!session.isAgent) {
+                DropdownMenuItem(
+                    text = { Text("重命名") },
+                    onClick = onRename,
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(if (session.isPinned) "取消置顶" else "置顶") },
+                onClick = onTogglePin,
+            )
+            DropdownMenuItem(
+                text = { Text("删除") },
+                onClick = onDelete,
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = null,
+                    )
+                },
+            )
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun HomeScreenPreview() {
@@ -647,15 +834,21 @@ fun HomeScreenPreview() {
             ),
             sessions = System.currentTimeMillis().let { now ->
                 listOf(
-                    SessionUiModel("1", "会话 1", now),
-                    SessionUiModel("2", "会话 2", now - 3600_000),
-                    SessionUiModel("3", "会话 3", now - 7200_000),
-                    SessionUiModel("4", "会话 4", now - 72000_000),
-                    SessionUiModel("5", "会话 5", now - 122000_000),
+                    SessionUiModel("1", "会话 1", isPinned = true, updatedAt = now),
+                    SessionUiModel("2", "会话 2", isPinned = false, updatedAt = now - 3600_000),
+                    SessionUiModel(
+                        "3",
+                        "会话 3",
+                        isPinned = false,
+                        agentId = "agent-x",
+                        agentName = "小奶茉",
+                        updatedAt = now - 7200_000,
+                    ),
+                    SessionUiModel("4", "会话 4", isPinned = false, updatedAt = now - 72000_000),
+                    SessionUiModel("5", "会话 5", isPinned = false, updatedAt = now - 122000_000),
                 )
             }
         ),
         initialDrawerValue = DrawerValue.Closed
     )
 }
-

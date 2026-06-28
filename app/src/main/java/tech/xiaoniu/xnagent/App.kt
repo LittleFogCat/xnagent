@@ -21,6 +21,8 @@ import tech.xiaoniu.xnagent.data.repository.AuthRepositoryImpl
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepositoryImpl
 import tech.xiaoniu.xnagent.data.local.AuthStore
+import tech.xiaoniu.xnagent.data.local.MIGRATION_1_2
+import tech.xiaoniu.xnagent.data.local.PendingRetryQueue
 import tech.xiaoniu.xnagent.data.local.TokenRefreshHandler
 import tech.xiaoniu.xnagent.data.local.XNDatabase
 import tech.xiaoniu.xnagent.data.local.dao.ChatDao
@@ -86,7 +88,9 @@ class AppModule {
         streamChatApi: StreamChatApi,
         chatApi: ChatApi,
         chatDao: ChatDao,
-    ): HomeRepository = HomeRepositoryImpl(context, json, streamChatApi, chatApi, chatDao)
+        favoriteRepository: FavoriteRepository,
+        pendingRetryQueue: PendingRetryQueue,
+    ): HomeRepository = HomeRepositoryImpl(context, json, streamChatApi, chatApi, chatDao, favoriteRepository, pendingRetryQueue)
 
     /** 统一的 JSON 序列化配置，允许忽略服务端新增字段。 */
     @Provides
@@ -226,7 +230,8 @@ class DataModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): XNDatabase {
         return Room.databaseBuilder(context, XNDatabase::class.java, "xnagent.db")
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .addMigrations(MIGRATION_1_2)
+            .fallbackToDestructiveMigration(dropAllTables = BuildConfig.DEBUG)
             .build()
     }
 

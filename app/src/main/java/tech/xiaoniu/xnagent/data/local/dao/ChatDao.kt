@@ -17,10 +17,10 @@ import tech.xiaoniu.xnagent.data.local.entity.Session
  */
 @Dao
 interface ChatDao {
-    @Query("SELECT * FROM session ORDER BY updateTime DESC")
+    @Query("SELECT * FROM session ORDER BY isPinned DESC, updateTime DESC")
     fun querySessionList(): Flow<List<Session>>
 
-    @Query("SELECT * FROM session ORDER BY updateTime DESC")
+    @Query("SELECT * FROM session ORDER BY isPinned DESC, updateTime DESC")
     suspend fun getSessionList(): List<Session>
 
     @Query("SELECT * FROM session WHERE id = :sessionId LIMIT 1")
@@ -38,6 +38,12 @@ interface ChatDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChatMessages(messages: List<ChatMessage>)
 
+    @Query("UPDATE session SET isPinned = :isPinned WHERE id = :sessionId")
+    suspend fun updateSessionPinned(sessionId: String, isPinned: Boolean)
+
+    @Query("UPDATE session SET title = :title, updateTime = :updateTime WHERE id = :sessionId")
+    suspend fun updateSessionTitle(sessionId: String, title: String, updateTime: Long)
+
     @Query("DELETE FROM chat_message WHERE sessionId = :sessionId")
     suspend fun deleteChatMessagesBySessionId(sessionId: String)
 
@@ -49,6 +55,17 @@ interface ChatDao {
 
     @Query("DELETE FROM session")
     suspend fun clearSessions()
+
+    /**
+     * 事务性地删除指定会话及其全部消息。
+     *
+     * 区别于 [deleteSession] 单独删表，避免出现孤儿消息。
+     */
+    @Transaction
+    suspend fun deleteSessionWithMessages(sessionId: String) {
+        deleteChatMessagesBySessionId(sessionId)
+        deleteSession(sessionId)
+    }
 
     /**
      * 事务性地重写某个会话及其全部消息。

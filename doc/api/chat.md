@@ -19,6 +19,7 @@
 | messages | array\<object\> | 否 | 消息数组，元素包含 `role`（`user`、`assistant`、`system`）和 `content`。仅详情、创建、更新接口会返回。 |
 | createdAt | number\|null | 是 | 创建时间，Unix 毫秒时间戳。 |
 | updatedAt | number\|null | 是 | 更新时间，Unix 毫秒时间戳。 |
+| isPinned | boolean\|null | 否 | 是否置顶。旧版服务端不返回该字段时为 `null`，客户端以本地为准。 |
 
 **公开模型对象字段**
 
@@ -310,6 +311,7 @@ data: [DONE]
 | model | string | 否 | 模型 ID；不传时默认 `glm-5.1`。 |
 | messages | array<object> | 否 | 初始消息数组，元素包含 `role` 和 `content`。 |
 | chatTarget | object\|null | 否 | 聊天目标，只支持 `{ "type": "identity", "id": "xiaonaimo" }`。 |
+| isPinned | boolean\|null | 否 | 是否置顶。缺省或 `null` 时客户端以本地为准。 |
 
 **请求示例**
 
@@ -394,6 +396,7 @@ data: [DONE]
 | model | string | 否 | 新模型 ID。 |
 | messages | array<object> | 否 | 新消息数组。 |
 | chatTarget | object\|null | 否 | 新聊天目标；传 `null` 或空对象可清空。 |
+| isPinned | boolean\|null | 否 | 是否置顶。缺省或 `null` 时表示保持当前值。 |
 
 **请求示例**
 
@@ -583,3 +586,20 @@ data: [DONE]
 **所需权限**
 
 无需登录。
+
+## 标题生成
+
+客户端**不**为标题生成提供单独接口；新建会话时，客户端复用 `POST /api/chat` 流式接口发送一条总结请求：
+
+- `model` 复用当前会话的模型 ID；
+- `messages` 由两条组成：一条 `system` 提示词（要求模型输出 8~15 字纯文本标题，不要标点 / 引号 / 额外说明），一条 `user` 为用户的首条消息原文；
+- `thinking` 强制为 `disabled`，避免 `reasoning_content` 干扰标题输出；
+- 服务端沿用既有流式聊天协议返回 SSE 片段，客户端按 `data: {"content": "..."}` 累积为单一标题字符串。
+
+> 兼容性：未来若服务端推出独立的标题生成接口（如 `POST /api/chat/title`），客户端可平滑切换而不影响上层调用方。
+
+## isPinned 字段兼容性说明
+
+- `GET /api/chats` 等列表接口：`isPinned` 由服务端返回；旧版服务端不返回该字段时为 `null`，客户端会回退到本地 Room 中的置顶状态。
+- `POST /api/chats` / `PUT /api/chats/:id`：请求体携带 `isPinned` 是可选的；不传或传 `null` 时，客户端会保留本地置顶状态再单独 `PUT`。
+- 客户端始终以本地 Room 的 `isPinned` 为最终事实来源，远端返回缺失或不一致时以本地为准。
