@@ -54,6 +54,12 @@ class HomeViewModel @Inject constructor(
      */
     private var sendJob: Job? = null
 
+    /**
+     * 当前进行中的会话加载请求；用户快速切换会话时取消前一个，
+     * 避免慢响应的旧会话覆盖新会话的消息列表。
+     */
+    private var loadSessionJob: Job? = null
+
     private companion object {
         const val GUEST_USER_MESSAGE_LIMIT = 10
     }
@@ -75,7 +81,15 @@ class HomeViewModel @Inject constructor(
                 )
             }
 
-            is HomeIntent.SelectSession -> loadSession(intent.sessionId)
+            is HomeIntent.SelectSession -> {
+                _uiState.update { state ->
+                    state.copy(
+                        currentSessionId = intent.sessionId,
+                        sessions = state.sessions.map { it.copy(selected = it.id == intent.sessionId) },
+                    ).withConversation(emptyList())
+                }
+                loadSession(intent.sessionId)
+            }
             HomeIntent.CreateNewChat -> startNewChat()
             HomeIntent.ToggleDeepThinking -> _uiState.update {
                 it.copy(isDeepThinkingEnabled = !it.isDeepThinkingEnabled)
@@ -231,14 +245,16 @@ class HomeViewModel @Inject constructor(
             return
         }
 
-        if (currentSessionId != nextSessionId || _uiState.value.messages.isEmpty()) {
+        if (currentSessionId != nextSessionId) {
             loadSession(nextSessionId)
         }
     }
 
     /** 按当前登录态读取指定会话内容，并同步选中项、模型和消息列表。 */
     private fun loadSession(sessionId: String) {
-        viewModelScope.launch {
+        // 取消上一次未完成的加载，避免旧会话的响应覆盖新会话的消息列表。
+        loadSessionJob?.cancel()
+        loadSessionJob = viewModelScope.launch {
             runCatching {
                 homeRepository.loadStoredChat(
                     sessionId = sessionId,
@@ -248,6 +264,7 @@ class HomeViewModel @Inject constructor(
                 storedChat ?: return@onSuccess
                 applyStoredChat(storedChat)
             }.onFailure {
+                if (it is CancellationException) throw it
                 Log.w(tag, "loadSession: sessionId=$sessionId", it)
             }
         }
@@ -583,10 +600,6 @@ class HomeViewModel @Inject constructor(
                 currentModel = selectedModel ?: state.currentModel,
                 sessions = state.sessions.map { it.copy(selected = it.id == storedChat.sessionId) },
             ).withConversation(messagesOverride ?: storedChat.messages)
-        }
-
-        if (authRepository.session.value.isLoggedIn) {
-            refreshRemoteSessions()
         }
     }
 
