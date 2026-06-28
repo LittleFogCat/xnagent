@@ -18,7 +18,7 @@ XNAgent 是一款基于 Android 平台的 AI 智能体聊天客户端。核心�
 | UI | Jetpack Compose（Material3，Compose BOM **2026.02.01**） | 启用动态取色（Android 12+） |
 | 构建 | AGP **9.1.1** | `compileSdk` 须使用 AGP 9.x DSL |
 | 依赖注入 | Hilt **2.59.2** + KSP | Hilt 模块集中在 `App.kt` |
-| 持久化 | Room **2.8.3** | Schema 存在且启用 |
+| 持久化 | Room **2.8.3** | Schema 默认未导出（`exportSchema = false`），运行时由 `Migrations.kt` 维护；release 包配置 `fallbackToDestructiveMigration(dropAllTables = BuildConfig.DEBUG)` 兜底 |
 | 网络 | Retrofit **2.9.0** + OkHttp **4.11.0** + kotlinx.serialization | SSE 单独走专用 OkHttp 客户端 |
 | Markdown | Markwon **4.6.2** | 助手消息正文使用 |
 | 协程 | kotlinx.coroutines | 调试期打开 `kotlinx.coroutines.debug` |
@@ -75,7 +75,7 @@ Remote     Local DB         Local KV     SSE Stream       SharedPrefs
 
 Intent 集合：
 
-- `HomeIntent`：`Initialize` / `SetAgentMode` / `UpdateInput` / `SendMessage` / `SelectModel` / `SelectSession` / `CreateNewChat` / `ToggleDeepThinking` / `EditUserMessage` / `RegenerateAssistantMessage` / `DeleteMessage` / `FavoriteMessage`。
+- `HomeIntent`：`Initialize` / `SetAgentMode` / `UpdateInput` / `SendMessage` / `CancelMessage` / `SelectModel` / `SelectSession` / `CreateNewChat` / `ToggleDeepThinking` / `EditUserMessage` / `RegenerateAssistantMessage` / `DeleteMessage` / `FavoriteMessage` / `SetSessionPinned` / `DeleteSession` / `RenameSession`。后三项为会话管理扩展：`SetSessionPinned(sessionId, pin)` 切换置顶；`DeleteSession(sessionId)` 整条删除；`RenameSession(sessionId, newTitle)` 重命名（智能体会话由 UI 层屏蔽）。
 - `LoginIntent`：`UpdateEmail` / `UpdatePassword` / `UpdateCaptchaAnswer` / `UpdateVerificationCode` / `ToggleMode` / `RefreshCaptcha` / `Login` / `RequestRegisterCode` / `CompleteRegister` / `ContinueAsGuest`。
 
 #### 3. 网络层双客户端
@@ -100,6 +100,24 @@ Intent 集合：
 - **同步**：`HomeRepositoryImpl.syncLocalChatsToRemote()` 在登录后把游客期或离线期本地会话逐条补传到远端。
 
 `loadStoredChat(sessionId, useRemote)` 与 `saveStoredChat(...)` 暴露统一接口，ViewModel 根据 `AuthSession.isLoggedIn` 自动选择 `useRemote` 路径。
+
+`HomeRepository` 会话管理扩展（v2 起）：
+
+- `generateTitle(firstUserMessage, modelId): String`：用 LLM 把首条用户消息提炼为 8~15 字标题（`suspend` 返回值，避免 `.first()` 契约脆弱）。
+- `pinSession(sessionId, isPinned, useRemote)`：切换置顶状态，本地优先落盘，远端失败仅记录日志。
+- `renameSession(sessionId, newTitle, useRemote)`：重命名会话，本地同时刷新 `updateTime`；空标题由调用方校验。
+- `deleteSession(sessionId, useRemote)`：本地事务删除消息与会话（`ChatDao.deleteSessionWithMessages`），远端调用 `DELETE /api/chats/:id`；**联动**调用 `FavoriteRepository.removeFavoritesBySessionId` 清理孤儿收藏。
+- `getLocalPinnedSessionIds(): Set<String>`：返回本地 Room 已置顶的会话 ID 集合，供 `refreshRemoteSessions` 在远端 `isPinned` 为 `null` 时回退到本地值。
+
+`FavoriteRepository` 扩展：
+
+- `removeFavoritesBySessionId(sessionId)`：级联删除指定会话下的全部收藏，用于 `HomeRepository.deleteSession` 联动清理，避免出现指向不存在会话的孤儿收藏。
+
+`HomeUiState` / `SessionUiModel` / `AgentUiModel` 字段：
+
+- `HomeUiState` 新增：`availableAgents: List<AgentUiModel>`（已缓存的智能体清单）；`isGeneratingTitle: Boolean`（LLM 标题生成中的中间态，UI 用 `CircularProgressIndicator` 提示）。
+- `SessionUiModel` 新增：`isPinned: Boolean`（置顶标记）、`agentId: String?` / `agentName: String?` / `agentAvatarUrl: String?`（智能体展示字段，由 `chatTarget` + 已缓存的 `AgentUiModel` 合并而来）、`updatedAt: Long`（按其倒序展示）；派生 `isAgent: Boolean` / `displayTitle: String`。
+- `AgentUiModel`（新增）：`id` / `name` / `avatarUrl`，由 `AgentInfoDto` 转换而来。
 
 #### 6. SSE 流式响应在 UI 上折叠为同一条助手消息
 
