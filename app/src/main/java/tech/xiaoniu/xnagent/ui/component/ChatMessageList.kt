@@ -2,6 +2,7 @@ package tech.xiaoniu.xnagent.ui.component
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -306,6 +308,27 @@ fun ChatMessageItem(
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("分享") },
+                        onClick = {
+                            // 通过系统分享面板分享纯文本消息正文，不附加角色前缀 / 时间戳。
+                            // 加 FLAG_ACTIVITY_NEW_TASK：未来若从 Service / Notification / Widget 等
+                            // 非 Activity context 复用同一段逻辑，可直接调用而不会触发 AndroidRuntimeException。
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, message.content)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "分享到"))
+                            showActionMenu = false
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Share,
                                 contentDescription = null,
                             )
                         },

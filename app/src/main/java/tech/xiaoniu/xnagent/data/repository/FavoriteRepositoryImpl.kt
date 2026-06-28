@@ -32,6 +32,12 @@ class FavoriteRepositoryImpl @Inject constructor(
         persist(_favorites.value.filterNot { it.id == id })
     }
 
+    override suspend fun removeFavoritesBySessionId(sessionId: String) {
+        val updated = _favorites.value.filterNot { it.sessionId == sessionId }
+        if (updated.size == _favorites.value.size) return
+        persist(updated)
+    }
+
     override suspend fun clearFavorites() {
         persist(emptyList())
     }

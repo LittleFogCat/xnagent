@@ -19,6 +19,8 @@ data class Session(
     val modelId: String,
     val createTime: Long,
     val updateTime: Long,
+    /** 是否置顶。抽屉按该字段降序优先展示，本地为准。 */
+    val isPinned: Boolean = false,
 )
 
 /**
