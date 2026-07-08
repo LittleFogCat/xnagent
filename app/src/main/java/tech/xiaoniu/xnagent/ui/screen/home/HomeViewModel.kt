@@ -18,6 +18,7 @@ import tech.xiaoniu.xnagent.common.util.currentTimeF
 import tech.xiaoniu.xnagent.data.remote.dto.AgentInfoDto
 import tech.xiaoniu.xnagent.data.remote.dto.ChatDto
 import tech.xiaoniu.xnagent.data.remote.dto.ChatRequest
+import tech.xiaoniu.xnagent.data.remote.dto.ChatTargetDto
 import tech.xiaoniu.xnagent.data.remote.dto.ThinkingConfig
 import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.local.entity.Session
@@ -648,9 +649,17 @@ class HomeViewModel @Inject constructor(
 
             applyStoredChat(savedBaseChat, messagesOverride = baseMessages)
             val persistedSessionId = savedBaseChat.sessionId
+            // 智能体会话需要在 /api/chat 请求里携带 chatTarget，服务端据此注入人格提示词。
+            // 普通会话 agentId 为 null，chatTarget 留空，行为不变。
+            val chatTarget = _uiState.value.sessions
+                .firstOrNull { it.id == persistedSessionId }
+                ?.agentId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { agentId -> ChatTargetDto(type = "identity", id = agentId) }
             val request = ChatRequest(
                 model = currentModel.id,
                 messages = baseMessages.map { it.toChatMessageDto() },
+                chatTarget = chatTarget,
                 thinking = ThinkingConfig(
                     if (_uiState.value.isDeepThinkingEnabled) {
                         ThinkingConfig.Type.ENABLED
