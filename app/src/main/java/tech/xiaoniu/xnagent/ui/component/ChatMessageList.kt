@@ -115,6 +115,7 @@ fun ChatMessageItem(
     var showActionMenu by rememberSaveable(message.id) { mutableStateOf(false) }
     var showSelectionDialog by rememberSaveable("${message.id}_select") { mutableStateOf(false) }
     var showEditDialog by rememberSaveable("${message.id}_edit") { mutableStateOf(false) }
+    var showDeleteConfirm by rememberSaveable("${message.id}_delete") { mutableStateOf(false) }
     var editDraft by rememberSaveable(message.id, message.content) { mutableStateOf(message.content) }
     val shouldShowReasoning = message.isThinking || reasoningExpanded
 
@@ -302,8 +303,9 @@ fun ChatMessageItem(
                     DropdownMenuItem(
                         text = { Text("删除") },
                         onClick = {
-                            onDeleteMessage(message.id)
+                            // 先关菜单再弹确认弹窗，避免 DropdownMenu 与 AlertDialog 同时占用焦点造成视觉混乱。
                             showActionMenu = false
+                            showDeleteConfirm = true
                         },
                         leadingIcon = {
                             Icon(
@@ -404,6 +406,28 @@ fun ChatMessageItem(
             },
             dismissButton = {
                 TextButton(onClick = { showEditDialog = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    if (showDeleteConfirm) {
+        // 二次确认：长按菜单点删除时不直接删，避免误触；确认后才真正落到 ViewModel。
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("删除消息") },
+            text = { Text("确定要删除这条消息吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteMessage(message.id)
+                    showDeleteConfirm = false
+                }) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
                     Text("取消")
                 }
             },

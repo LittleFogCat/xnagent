@@ -75,6 +75,12 @@ class HomeViewModel @Inject constructor(
         const val GUEST_USER_MESSAGE_LIMIT = 10
     }
 
+    private data class AgentBinding(val id: String?, val name: String?) {
+        companion object {
+            val EMPTY = AgentBinding(null, null)
+        }
+    }
+
     /**
      * 主页统一意图分发入口，负责把 UI 事件路由到对应的状态变更或异步任务。
      */
@@ -116,6 +122,7 @@ class HomeViewModel @Inject constructor(
             is HomeIntent.SetSessionPinned -> setSessionPinned(intent.sessionId, intent.pin)
             is HomeIntent.DeleteSession -> deleteSession(intent.sessionId)
             is HomeIntent.RenameSession -> renameSession(intent.sessionId, intent.newTitle)
+            HomeIntent.ClearConversation -> clearConversation()
             HomeIntent.ConsumeError -> _uiState.update { it.copy(errorMessage = null) }
         }
     }
@@ -461,6 +468,17 @@ class HomeViewModel @Inject constructor(
 
         val updatedMessages = currentMessages.filterNot { it.id == messageId }
         persistConversation(updatedMessages)
+    }
+
+    /**
+     * 清空当前会话的全部消息，保留会话本身与标题。
+     *
+     * 复用 persistConversation 让本地/远端两条链路走同一份落盘逻辑；空消息列表会触发
+     * replaceSessionMessages 事务删除旧消息，未登录态下也保证 UI 立即清空。
+     */
+    private fun clearConversation() {
+        if (_uiState.value.messages.isEmpty()) return
+        persistConversation(emptyList())
     }
 
     /** 将指定消息加入收藏，并补齐会话标题等展示所需元信息。 */
@@ -817,9 +835,20 @@ class HomeViewModel @Inject constructor(
     /** 使用仓库返回的会话快照统一刷新当前会话 ID、模型选择和消息列表。 */
     private fun applyStoredChat(storedChat: StoredChat, messagesOverride: List<ChatMessage>? = null) {
         val selectedModel = findModel(storedChat.modelId)
+        // 把仓库返回的 chatTarget 转成 UI 用的 (agentId, agentName)：智能体身份型目标才认，
+        // 没匹配到的智能体显示名留给已加载的 agents 列表补上，避免泄露未知 id。
+        val agentBinding = storedChat.resolveAgentBinding(_uiState.value.availableAgents)
         _uiState.update { state ->
             val updatedSessions = if (state.sessions.any { it.id == storedChat.sessionId }) {
-                state.sessions.map { it.copy(selected = it.id == storedChat.sessionId) }
+                // 会话已在侧栏：把当前条目选中；只在原本缺失 agent 字段时回填，避免覆盖已经是智能体的旧条目。
+                state.sessions.map {
+                    if (it.id != storedChat.sessionId) it
+                    else it.copy(
+                        selected = true,
+                        agentId = it.agentId ?: agentBinding.id,
+                        agentName = it.agentName ?: agentBinding.name,
+                    )
+                }
             } else {
                 // 新建会话：登录用户模式下远端列表缓存里尚无这条记录，需要就地插入到列表最前并标记为选中，
                 // 否则抽屉里看不到刚发出去的首条消息。prepend 是因为 updateTime 是最新值，
@@ -830,6 +859,8 @@ class HomeViewModel @Inject constructor(
                     isPinned = false,
                     updatedAt = storedChat.updatedAt,
                     selected = true,
+                    agentId = agentBinding.id,
+                    agentName = agentBinding.name,
                 )
                 listOf(newSession) + state.sessions
             }
@@ -840,6 +871,19 @@ class HomeViewModel @Inject constructor(
                 sessions = updatedSessions,
             ).withConversation(messagesOverride ?: storedChat.messages)
         }
+    }
+
+    /**
+     * 把 [StoredChat.chatTarget] 翻译成抽屉用的智能体绑定。
+     *
+     * 仅在 `type == "identity"` 且提供了非空 id 时返回 ID；展示名只能从已缓存的智能体列表里命中，
+     * 避免把未知 id 直接暴露到 UI。仓库层的 StoredChat 在本地模式下固定为 null，这里也会短路返回。
+     */
+    private fun StoredChat.resolveAgentBinding(agents: List<AgentUiModel>): AgentBinding {
+        val target = chatTarget
+        if (target?.type != "identity" || target.id.isBlank()) return AgentBinding.EMPTY
+        val name = agents.firstOrNull { it.id == target.id }?.name
+        return AgentBinding(target.id, name)
     }
 
     private fun findModel(modelId: String): ModelUiModel? {
