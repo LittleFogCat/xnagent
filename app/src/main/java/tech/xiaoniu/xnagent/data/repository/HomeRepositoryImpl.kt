@@ -427,21 +427,7 @@ class HomeRepositoryImpl @Inject constructor(
     }
 
     /** 把远端聊天 DTO 转成界面统一使用的存储模型。 */
-    private fun ChatDto.toStoredChat(): StoredChat {
-        val remoteMessages = messages.orEmpty().mapIndexed { index, message ->
-            message.toUiChatMessage(
-                sessionId = id,
-                fallbackIndex = index,
-            )
-        }
-        return StoredChat(
-            sessionId = id,
-            title = title,
-            modelId = model,
-            messages = remoteMessages,
-            updatedAt = updatedAt ?: createdAt ?: System.currentTimeMillis(),
-        )
-    }
+    private fun ChatDto.toStoredChat(): StoredChat = chatDtoToStoredChat()
 
     /** 把本地 Session 与消息列表拼装为统一的存储模型。 */
     private fun Session.toStoredChat(messages: List<LocalChatMessage>): StoredChat {
@@ -489,13 +475,8 @@ class HomeRepositoryImpl @Inject constructor(
     }
 
     /** 为远端消息生成稳定的临时 ID，方便 UI 列表 diff。 */
-    private fun ChatMessageDto.toUiChatMessage(sessionId: String, fallbackIndex: Int): ChatMessage {
-        return ChatMessage(
-            id = "$sessionId-$fallbackIndex-${role.hashCode()}-${content.hashCode()}",
-            role = role.toMessageRole(),
-            content = content,
-        )
-    }
+    private fun ChatMessageDto.toUiChatMessage(sessionId: String, fallbackIndex: Int): ChatMessage =
+        chatMessageDtoToUiChatMessage(sessionId, fallbackIndex)
 
     /** 将界面角色枚举映射到接口约定的 role 字符串。 */
     private fun MessageRole.toApiRole(): String {
@@ -507,13 +488,7 @@ class HomeRepositoryImpl @Inject constructor(
     }
 
     /** 将远端或本地持久化的 role 字符串恢复成界面枚举。 */
-    private fun String.toMessageRole(): MessageRole {
-        return when (lowercase()) {
-            "system" -> MessageRole.SYSTEM
-            "assistant" -> MessageRole.ASSISTANT
-            else -> MessageRole.USER
-        }
-    }
+    private fun String.toMessageRole(): MessageRole = toMessageRoleEnum()
 
     /** 拼装标题生成请求。 */
     private fun buildSummaryRequest(content: String, modelId: String): ChatRequest {
@@ -561,5 +536,43 @@ class HomeRepositoryImpl @Inject constructor(
 
         /** 标题最大长度，与需求文档保持一致。 */
         const val TITLE_MAX_LENGTH = 15
+    }
+}
+
+/**
+ * 仓库内 ChatDto → StoredChat 的实现，提升到 file-level 便于在 [tech.xiaoniu.xnagent] 模块内（包含单测）直接覆盖。
+ *
+ * 必须保留 [ChatDto.chatTarget] 到 [StoredChat.chatTarget]：服务端通过该字段识别智能体归属、
+ * 在 ChatRequest 里回传 `chatTarget` 以触发服务端提示词注入。请勿移除此映射。
+ */
+internal fun ChatDto.chatDtoToStoredChat(): StoredChat {
+    val remoteMessages = messages.orEmpty().mapIndexed { index, message ->
+        message.chatMessageDtoToUiChatMessage(sessionId = id, fallbackIndex = index)
+    }
+    return StoredChat(
+        sessionId = id,
+        title = title,
+        modelId = model,
+        messages = remoteMessages,
+        updatedAt = updatedAt ?: createdAt ?: System.currentTimeMillis(),
+        chatTarget = chatTarget,
+    )
+}
+
+/** 为远端消息生成稳定的临时 ID，方便 UI 列表 diff。 */
+internal fun ChatMessageDto.chatMessageDtoToUiChatMessage(sessionId: String, fallbackIndex: Int): ChatMessage {
+    return ChatMessage(
+        id = "$sessionId-$fallbackIndex-${role.hashCode()}-${content.hashCode()}",
+        role = role.toMessageRoleEnum(),
+        content = content,
+    )
+}
+
+/** 将远端或本地持久化的 role 字符串恢复成界面枚举。 */
+internal fun String.toMessageRoleEnum(): MessageRole {
+    return when (lowercase()) {
+        "system" -> MessageRole.SYSTEM
+        "assistant" -> MessageRole.ASSISTANT
+        else -> MessageRole.USER
     }
 }
