@@ -44,6 +44,9 @@ sealed class HomeIntent {
     /** 重命名会话标题。空标题由 ViewModel 直接拒绝。 */
     data class RenameSession(val sessionId: String, val newTitle: String) : HomeIntent()
 
+    /** 清空当前会话的全部消息（保留会话本身和标题）。 */
+    object ClearConversation : HomeIntent()
+
     /** 消费一次性错误事件，避免重复展示。 */
     object ConsumeError : HomeIntent()
 }
