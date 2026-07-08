@@ -818,11 +818,26 @@ class HomeViewModel @Inject constructor(
     private fun applyStoredChat(storedChat: StoredChat, messagesOverride: List<ChatMessage>? = null) {
         val selectedModel = findModel(storedChat.modelId)
         _uiState.update { state ->
+            val updatedSessions = if (state.sessions.any { it.id == storedChat.sessionId }) {
+                state.sessions.map { it.copy(selected = it.id == storedChat.sessionId) }
+            } else {
+                // 新建会话：登录用户模式下远端列表缓存里尚无这条记录，需要就地插入到列表最前并标记为选中，
+                // 否则抽屉里看不到刚发出去的首条消息。prepend 是因为 updateTime 是最新值，
+                // 与 Room 的 ORDER BY isPinned DESC, updateTime DESC 保持一致。
+                val newSession = SessionUiModel(
+                    id = storedChat.sessionId,
+                    title = storedChat.title,
+                    isPinned = false,
+                    updatedAt = storedChat.updatedAt,
+                    selected = true,
+                )
+                listOf(newSession) + state.sessions
+            }
             state.copy(
                 currentSessionId = storedChat.sessionId,
                 currentSessionModelId = storedChat.modelId,
                 currentModel = selectedModel ?: state.currentModel,
-                sessions = state.sessions.map { it.copy(selected = it.id == storedChat.sessionId) },
+                sessions = updatedSessions,
             ).withConversation(messagesOverride ?: storedChat.messages)
         }
     }
