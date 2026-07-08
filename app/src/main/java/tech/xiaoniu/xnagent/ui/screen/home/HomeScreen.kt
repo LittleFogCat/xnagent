@@ -225,76 +225,72 @@ fun HomeScreenContent(
             topBar = {
                 TopAppBar(
                     title = {
-                        // 竖直两行布局：第一行菜单图标 + 标题；第二行模型选择器 + 清空 + 新建。
-                        // 这样既保证标题获得完整宽度，又让用户能直接看到模型选择器处于标题下方。
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        drawerScope.launch {
-                                            if (drawerState.isClosed) {
-                                                drawerState.open()
-                                            } else {
-                                                drawerState.close()
-                                            }
-                                        }
-                                    },
-                                    colors = IconButtonDefaults.iconButtonColors(
-                                        containerColor = Color.Transparent
-                                    ),
-                                    modifier = Modifier.padding(0.dp)
-                                ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_action_menu),
-                                        contentDescription = "Menu",
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .background(Color.Transparent)
-                                            .padding(6.dp)
-                                    )
+                        // 抽屉入口固定在 title 区左侧；标题 + 模型选择器作为 Column 落在 actions 区。
+                        IconButton(
+                            onClick = {
+                                drawerScope.launch {
+                                    if (drawerState.isClosed) {
+                                        drawerState.open()
+                                    } else {
+                                        drawerState.close()
+                                    }
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
+                            },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color.Transparent
+                            ),
+                            modifier = Modifier.padding(0.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_action_menu),
+                                contentDescription = "Menu",
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(Color.Transparent)
+                                    .padding(6.dp)
+                            )
+                        }
+                    },
+                    actions = {
+                        // 标题 + 模型选择器纵向堆叠：标题在上、模型选择器在下；动作按钮靠最右侧。
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.widthIn(min = 120.dp, max = 200.dp)
+                            ) {
                                 // 顶部标题按会话类型切换：新对话 / 智能体名称 / 普通会话标题；
                                 // 单行省略避免顶栏被长标题撑高。
-                                Text(
-                                    text = topBarTitle(uiState, currentSession),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodyLarge
-                                        .copy(fontWeight = FontWeight.Bold),
-                                    modifier = Modifier.weight(1f),
-                                )
-                                // 标题生成中提示：用户已经发出首条消息、正在等 LLM 返回标题。
-                                if (uiState.isGeneratingTitle) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = topBarTitle(uiState, currentSession),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyMedium
+                                            .copy(fontWeight = FontWeight.Bold),
+                                        modifier = Modifier.weight(1f),
                                     )
+                                    // 标题生成中提示：用户已经发出首条消息、正在等 LLM 返回标题。
+                                    if (uiState.isGeneratingTitle) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                // 模型选择器置于标题正下方，weight(1f) 让它在剩余宽度里撑开。
                                 DropdownSelector(
                                     items = uiState.availableModels,
                                     onItemSelect = { onAction(HomeIntent.SelectModel(it)) },
                                     itemToText = { label },
-                                    border = false,
-                                    contentPadding = PaddingValues(),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 36.dp, max = 36.dp)
+                                    border = true,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
                                         text = uiState.currentModel?.name ?: "",
@@ -304,45 +300,42 @@ fun HomeScreenContent(
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                 }
-                                // 清空对话：仅在当前已有消息时启用，避免空状态触发无意义弹窗。
-                                IconButton(
-                                    onClick = { showClearConversationDialog = true },
-                                    enabled = uiState.messages.isNotEmpty(),
-                                    colors = IconButtonDefaults.iconButtonColors(
-                                        containerColor = Color.Transparent,
-                                    ),
-                                    modifier = Modifier.padding(0.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.DeleteSweep,
-                                        contentDescription = "清空对话",
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .background(Color.Transparent)
-                                            .padding(2.dp)
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { onAction(HomeIntent.CreateNewChat) },
-                                    colors = IconButtonDefaults.iconButtonColors(
-                                        containerColor = Color.Transparent
-                                    ),
-                                    modifier = Modifier.padding(0.dp)
-                                ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_add),
-                                        contentDescription = "新建对话",
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .background(Color.Transparent)
-                                            .padding(2.dp)
-                                    )
-                                }
+                            }
+                            // 清空对话：仅在当前已有消息时启用，避免空状态触发无意义弹窗。
+                            IconButton(
+                                onClick = { showClearConversationDialog = true },
+                                enabled = uiState.messages.isNotEmpty(),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.Transparent,
+                                ),
+                                modifier = Modifier.padding(0.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteSweep,
+                                    contentDescription = "清空对话",
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .background(Color.Transparent)
+                                        .padding(2.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onAction(HomeIntent.CreateNewChat) },
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    containerColor = Color.Transparent
+                                ),
+                                modifier = Modifier.padding(0.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_add),
+                                    contentDescription = "新建对话",
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .background(Color.Transparent)
+                                        .padding(2.dp)
+                                )
                             }
                         }
-                    },
-                    actions = {
-                        // 第二行已经把模型选择器和动作按钮搬到 title 区，actions 留空以避免重复。
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.White
