@@ -267,10 +267,15 @@ class HomeViewModel @Inject constructor(
             else -> null
         }
 
+        // 与 Room 的 ORDER BY isPinned DESC, updateTime DESC 保持一致，避免远端/本地混用时新会话掉到列表底部。
+        val sortedSessions = sessions.sortedWith(
+            compareByDescending<SessionUiModel> { it.isPinned }.thenByDescending { it.updatedAt },
+        )
+
         _uiState.update { state ->
             state.copy(
                 currentSessionId = nextSessionId,
-                sessions = sessions.map { it.copy(selected = it.id == nextSessionId) },
+                sessions = sortedSessions.map { it.copy(selected = it.id == nextSessionId) },
             ).withConversation(if (nextSessionId == null) emptyList() else state.messages)
         }
 
