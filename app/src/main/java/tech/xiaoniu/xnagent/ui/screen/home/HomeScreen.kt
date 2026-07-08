@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -578,7 +579,16 @@ fun DrawerContent(
             }
         } else {
             val (pinnedSessions, normalSessions) = sessions.partitionByPin()
+            val listState = rememberLazyListState()
+            // 列表首位变化（如新建会话被 prepend 到顶部）时自动滚到顶部，
+            // 避免 Compose 按 key 保留原可见项导致新会话被滚到视口外。
+            LaunchedEffect(sessions.firstOrNull()?.id) {
+                if (sessions.isNotEmpty()) {
+                    listState.scrollToItem(0)
+                }
+            }
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f)
             ) {
                 // 置顶组：仅在存在置顶会话时显示小标题；置顶会话按更新时间倒序（partitionByPin 已处理）。
