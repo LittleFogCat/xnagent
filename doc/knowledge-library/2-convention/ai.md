@@ -12,7 +12,7 @@
 4. 如果多个模块均受影响，可同时读取多个相关文档。
 5. 不要凭经验猜测项目规范，如存在对应文档，应优先阅读后再进行实现。
 6. 若任务涉及的规范文档不存在，可结合现有代码实现保持一致的编码风格。
-7. **构建验证**：任何修改代码的操作之后，**必须**保证项目可以通过构建。完成代码修改后，应在本地执行一次 `./gradlew.bat assembleDebug`（详见 [app.md](doc/knowledge-library/3-modules/app.md) 第 6 节），确认没有编译错误或破坏现有功能后再交付。
+7. **构建验证**：任何修改代码的操作之后，**必须**在本地跑一次最小编译验证，确认没有编译错误后再交付。最小成本命令为 `./gradlew.bat :app:compileDebugKotlin`（只编译 Kotlin，不打包 APK、不跑 lint/test；可加 `--offline` 跳过依赖解析）。仅当改动涉及资源、AndroidManifest、多模块或需要验证运行期行为时，再补跑一次 `./gradlew.bat assembleDebug`（详见 [app.md](doc/knowledge-library/3-modules/app.md) 第 6 节）做完整验证。
 8. 当用户给出文件名，要求执行该文件描述的任务时，优先从 `/doc/.ai/dev` 目录下寻找对应的文档。
 9. 当对用户提出的任务进行评估之后，认为该任务非常复杂，需要详细计划，则先在 `/doc/.ai/plan` 目录下生成计划文件，再进行任务的执行。文件名称格式为 `plan_{topic}_yyMMdd_HHmm.md`。
 10. 当执行了 review 任务后，需要在 `/doc/.ai/review` 目录下新建 review 文件，文件名格式为 `review_{topic}_yyMMdd_HHmm.md`。
