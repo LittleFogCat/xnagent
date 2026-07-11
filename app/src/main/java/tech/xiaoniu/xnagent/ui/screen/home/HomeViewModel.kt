@@ -54,6 +54,15 @@ class HomeViewModel @Inject constructor(
     private var initialized = false
 
     /**
+     * 是否首次应用会话列表。
+     *
+     * 冷启动后首次调用 [applySessionList] 时为 true，会强制 [HomeUiState.currentSessionId] = null
+     * 让用户进入"新对话"界面；之后整个 ViewModel 生命周期内不再翻转，避免后续数据库写入
+     * 把用户输入中的草稿打断成历史会话。
+     */
+    private var isFirstSessionApply = true
+
+    /**
      * 当前进行中的流式对话请求；用于在用户点击停止按钮时取消协程，
      * 让 [tech.xiaoniu.xnagent.data.repository.HomeRepositoryImpl.sendToLLM] 中的 `ensureActive()` 抛出并断开 SSE。
      */
@@ -267,13 +276,22 @@ class HomeViewModel @Inject constructor(
 
     /** 将新的会话列表应用到状态中，并尽量保留当前选中的会话。 */
     private fun applySessionList(sessions: List<SessionUiModel>) {
-        // 会话列表刷新时尽量保留用户当前选中项，只有找不到时才回退到第一条。
+        // 选择下一会话 ID 的策略：
+        // - 冷启动首次加载：强制 null → 进入"新对话"界面（不自动选中历史会话）。
+        // - 用户主动选过、且该会话仍在列表中：保留选中。
+        // - 用户处于"新对话"（currentSessionId == null）：保持 null，避免数据库写入
+        //   （如同步、会话被删）把用户输入中的草稿打断成历史会话。
+        // - 兜底：当前选中已不在列表中时回退到列表第一条，否则 null。
         val currentSessionId = _uiState.value.currentSessionId
+        val isFirst = isFirstSessionApply
         val nextSessionId = when {
+            isFirst -> null
             currentSessionId != null && sessions.any { it.id == currentSessionId } -> currentSessionId
+            currentSessionId == null -> null
             sessions.isNotEmpty() -> sessions.first().id
             else -> null
         }
+        isFirstSessionApply = false
 
         // 与 Room 的 ORDER BY isPinned DESC, updateTime DESC 保持一致，避免远端/本地混用时新会话掉到列表底部。
         val sortedSessions = sessions.sortedWith(
@@ -554,21 +572,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** 删除当前会话后挑选下一个落点：跳过置顶组，从普通组取最新一条，或回到「无选中」。 */
+    /**
+     * 删除当前会话后回到「新对话」界面，不自动跳到下一条历史会话。
+     *
+     * 调用方 [deleteSession] 已经把 [HomeUiState.currentSessionId] 置 null 并清空消息；
+     * 这里仅兜底重置侧栏会话的 `selected` 标记，确保删除后抽屉里没有半选中的状态。
+     */
     private fun rebuildCurrentSessionAfterDeletion() {
         val state = _uiState.value
         if (state.currentSessionId != null) return
-        // 优先选普通组最新一条；普通组为空时才退到置顶组，避免用户删除后跳到半年前置顶的旧会话。
-        val next = state.sessions.firstOrNull { !it.isPinned } ?: state.sessions.firstOrNull()
-        if (next == null) {
-            _uiState.update { it.withConversation(emptyList()) }
-            return
+        _uiState.update { state ->
+            state.copy(sessions = state.sessions.map { it.copy(selected = false) })
         }
-        _uiState.update { it.copy(
-            currentSessionId = next.id,
-            sessions = it.sessions.map { session -> session.copy(selected = session.id == next.id) },
-        ) }
-        loadSession(next.id)
     }
 
     /** 重命名会话标题。空字符串直接拒绝，避免把会话改成空标题。 */
