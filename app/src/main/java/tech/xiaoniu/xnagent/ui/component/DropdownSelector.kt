@@ -2,6 +2,7 @@ package tech.xiaoniu.xnagent.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -51,6 +52,8 @@ fun <T> DropdownSelector(
         modifier = modifier.fillMaxSize(),
     ) {
         // 锚点区域由外部 child 决定当前展示内容，右侧统一复用 Material3 展开箭头。
+        // Box 默认 wrap content 宽度 + spacedBy(4.dp) 让文字与下拉箭头紧贴 4dp，避免 child 用 fillMaxWidth
+        // 把 Box 撑满整个 Row，导致选择器看起来「文字部分过宽」。
         Row(
             modifier = Modifier
                 .menuAnchor(
@@ -65,12 +68,11 @@ fun <T> DropdownSelector(
                         border(1.dp, MaterialTheme.colorScheme.outline, shape = OutlinedTextFieldDefaults.shape)
                     }
                 },
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier
-                    .wrapContentHeight()
-                    .weight(1f)
+                modifier = Modifier.wrapContentHeight()
             ) {
                 child()
             }
