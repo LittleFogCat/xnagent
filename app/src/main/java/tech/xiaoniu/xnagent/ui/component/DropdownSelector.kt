@@ -1,5 +1,6 @@
 package tech.xiaoniu.xnagent.ui.component
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.dp
  * 通用下拉选择器。
  *
  * 当前主要用于模型切换，但组件本身与具体业务类型无关。
+ * 弹出菜单按设计系统 §6.7 落地 iOS Popover 风格（圆角 / 阴影 / 边框 / 项间分隔线）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,9 +91,16 @@ fun <T> DropdownSelector(
                 .widthIn(min = 220.dp)
                 .background(Color.White),
             matchAnchorWidth = false,
+            // iOS Popover 风格：与长按菜单保持一致的视觉语言。
+            shape = RoundedCornerShape(16.dp),
+            shadowElevation = 8.dp,
+            containerColor = Color.White.copy(alpha = 0.96f),
+            border = BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.06f)),
         ) {
-            items.forEach { item ->
-                // 选中某项后立即回调并关闭下拉菜单。
+            items.forEachIndexed { index, item ->
+                if (index > 0) {
+                    IosMenuDivider()
+                }
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -102,7 +112,8 @@ fun <T> DropdownSelector(
                         onItemSelect(item)
                         expanded = false
                     },
-                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                    // 与长按菜单保持一致的紧凑内边距。
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
         }
