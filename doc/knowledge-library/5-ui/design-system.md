@@ -156,6 +156,57 @@ XNAgent 使用 Material3 作为设计语言基础，叠加一组业务色与少�
 - `TypingIndicator` 只在 `isResponding && !hasLiveAssistant` 时显示，避免与正在增长的助手气泡同时出现造成视觉冗余；
 - `hasLiveAssistant` 定义：消息列表中存在 `role == ASSISTANT && (isThinking || isGenerating)` 的项。
 
+### 6.7 弹窗 / 菜单（iOS Popover 风格）
+
+长按消息、长按会话条目等场景触发的 `DropdownMenu` 统一采用 iOS 长按弹窗风格，保证视觉一致性。
+
+**容器参数**：
+
+| 参数 | 取值 | 说明 |
+| --- | --- | --- |
+| `shape` | `RoundedCornerShape(16.dp)` | 大圆角，弱化「Material 列表」感 |
+| `shadowElevation` | `8.dp` | 轻阴影，避免过重投影 |
+| `containerColor` | `Color.White.copy(alpha = 0.96f)` | 微透明白底，与气泡背景区分 |
+| `border` | `BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.06f))` | 极细灰边，辅助分层 |
+
+**菜单项（`DropdownMenuItem`）**：
+
+| 参数 | 取值 |
+| --- | --- |
+| `contentPadding` | `PaddingValues(horizontal = 16.dp, vertical = 8.dp)` |
+| `leadingIcon` | **必填**：所有菜单项必须带图标，统一「图标 + 文字」格式 |
+
+**项间分隔线**：使用私有组件 `IosMenuDivider`，参数：
+
+- `thickness = 0.5.dp`
+- `color = Color.Black.copy(alpha = 0.08f)`
+
+`IosMenuDivider` 当前在 `app/src/main/java/tech/xiaoniu/xnagent/ui/component/ChatMessageList.kt` 和 `ui/screen/home/HomeScreen.kt` 各定义一份（仅 4 行代码，待出现第三个使用点再抽公共组件）。
+
+**锚点策略**（关键技术点，违反会导致菜单跑偏）：
+
+- Material3 `DropdownMenu` 内部用 `Popup` 实现。`Popup` 的 anchor 来自它在 Compose 树中**直接的 Layout 父节点**（参见 `AndroidPopup.android.kt` 中 `childCoordinates.parentLayoutCoordinates` 的用法）。
+- 必须把 `DropdownMenu` 嵌入到「按压点位置的 0 大小 Box」**内部**作为子节点：
+  ```kotlin
+  Box(
+      modifier = Modifier
+          .offset(actionMenuOffset.x, actionMenuOffset.y)
+          .size(0.dp)
+  ) {
+      DropdownMenu(
+          expanded = ...,
+          offset = DpOffset.Zero,  // 关键：传 Zero，offset 已在 Box 上
+      ) { ... }
+  }
+  ```
+- 这样 `anchorBounds = (按压点, 0, 0)`，`DropdownMenu` 默认「菜单左上对齐 anchor 左上」即可精准锚到按压点。
+- `actionMenuOffset` 通过 `Modifier.pointerInput(key) { detectTapGestures(onLongPress = { offset -> ... }) }` 捕获的 `Offset` 转 `DpOffset` 得到。
+- ❌ 不能用 `combinedClickable` 的 `onLongClick`：本项目 Compose 版本没有接收 `Offset` 的 `combinedClickable` 重载，无法捕获按压点位置。
+
+**为什么不用 `DropdownMenu` 自带的 `offset` 参数传按压点**：
+
+`DropdownMenu` 的 `offset` 是基于 Popup **自动选定的对齐边**（X 默认对齐 anchor 左边，Y 默认对齐 anchor 底部）再加偏移，不是从 anchor 左上角开始算。直接传按压点坐标会让菜单跑到气泡 / 行边界外。
+
 ## 7. 动效
 
 - 消息项中思考过程展开：`expandVertically` / `shrinkVertically`，时长 220ms；
