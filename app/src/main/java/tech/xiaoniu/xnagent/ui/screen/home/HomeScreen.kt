@@ -410,7 +410,7 @@ fun HomeScreenContent(
                 // 底部输入区统一承载输入框、深度思考开关和发送按钮。
                 Card(
                     elevation = CardDefaults.cardElevation(4.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     colors = CardDefaults.cardColors(Color.White),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -430,7 +430,7 @@ fun HomeScreenContent(
                                         style = MaterialTheme.typography.bodyLarge
                                     )
                                 },
-                                shape = RoundedCornerShape(8.dp),
+                                shape = MaterialTheme.shapes.small,
                                 colors = TextFieldDefaults.colors(
                                     unfocusedContainerColor = Color.Transparent,
                                     focusedContainerColor = Color.Transparent,
@@ -447,7 +447,7 @@ fun HomeScreenContent(
                             OutlinedButton(
                                 modifier = Modifier.defaultMinSize(minHeight = 1.dp),
                                 onClick = { onAction(HomeIntent.ToggleDeepThinking) },
-                                shape = RoundedCornerShape(20.dp),
+                                shape = MaterialTheme.shapes.extraLarge,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     containerColor = if (uiState.isDeepThinkingEnabled) {
@@ -795,7 +795,7 @@ private fun SessionRow(
                     } else {
                         Color.Transparent
                     },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                 )
                 // 改用 pointerInput + detectTapGestures：combinedClickable 拿不到按压点 Offset，
                 // 这里需要把菜单锚到手指位置，所以必须用 detectTapGestures 的 onLongPress。

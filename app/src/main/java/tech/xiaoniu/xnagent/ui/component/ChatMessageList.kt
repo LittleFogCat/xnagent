@@ -170,8 +170,8 @@ fun ChatMessageItem(
                             colorResource(R.color.chat_bubble_bg_assist)
                         },
                         shape = RoundedCornerShape(
-                            topStart = if (isUser) 16.dp else 4.dp,
-                            topEnd = if (isUser) 4.dp else 16.dp,
+                            topStart = if (isUser) 16.dp else 8.dp,
+                            topEnd = if (isUser) 8.dp else 16.dp,
                             bottomStart = 16.dp,
                             bottomEnd = 16.dp
                         )
