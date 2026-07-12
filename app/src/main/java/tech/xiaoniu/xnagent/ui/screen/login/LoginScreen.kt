@@ -74,6 +74,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import tech.xiaoniu.xnagent.ui.model.LoginUiState
+import tech.xiaoniu.xnagent.ui.theme.BrandBlue
 import tech.xiaoniu.xnagent.ui.theme.HeroShape
 
 /**
@@ -109,7 +110,7 @@ fun LoginContent(
     val backgroundColor = Color(0xFFF4F8FB)
     val primaryText = Color(0xFF0F172A)
     val secondaryText = Color(0xFF475569)
-    val accentColor = Color(0xFF0EA5E9)
+    val accentColor = BrandBlue
     val accentSoft = Color(0xFFDFF7FF)
     val cardBorder = Color(0xFFE2E8F0)
     val fieldColors = OutlinedTextFieldDefaults.colors(
