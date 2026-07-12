@@ -506,18 +506,6 @@ fun ChatMessageItem(
     }
 }
 
-/**
- * iOS 弹窗风格菜单项之间的细分割线：0.5dp，颜色 alpha 0.08f 的黑色。
- * 比 Material3 默认的 HorizontalDivider 默认色更淡，符合 iOS 长按弹窗的视觉密度。
- */
-@Composable
-private fun IosMenuDivider() {
-    HorizontalDivider(
-        thickness = 0.5.dp,
-        color = Color.Black.copy(alpha = 0.08f),
-    )
-}
-
 @Composable
 private fun ReasoningSection(
     message: ChatMessage,
