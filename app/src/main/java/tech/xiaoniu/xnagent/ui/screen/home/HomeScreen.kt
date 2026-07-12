@@ -1,8 +1,9 @@
 package tech.xiaoniu.xnagent.ui.screen.home
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +31,9 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
@@ -42,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,6 +78,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.colorResource
@@ -81,6 +87,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -156,8 +163,6 @@ fun HomeScreenContent(
     val drawerScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 抽屉中正在展示菜单的会话 ID；为 null 表示菜单关闭。
-    var menuSessionId by remember { mutableStateOf<String?>(null) }
     // 正在重命名的会话；非 null 时弹出重命名对话框。
     var renameTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     // 是否展示「清空对话」二次确认弹窗。
@@ -181,8 +186,6 @@ fun HomeScreenContent(
             DrawerContent(
                 modifier = modifier,
                 sessions = uiState.sessions,
-                menuSessionId = menuSessionId,
-                onDismissMenu = { menuSessionId = null },
                 onNewChat = {
                     onAction(HomeIntent.CreateNewChat)
                     drawerScope.launch { drawerState.close() }
@@ -191,18 +194,14 @@ fun HomeScreenContent(
                     onAction(HomeIntent.SelectSession(it))
                     drawerScope.launch { drawerState.close() }
                 },
-                onSessionLongPress = { menuSessionId = it },
                 onRenameSession = { session ->
-                    menuSessionId = null
                     renameTarget = session.id to session.title
                 },
                 onTogglePinSession = { session ->
                     onAction(HomeIntent.SetSessionPinned(session.id, !session.isPinned))
-                    menuSessionId = null
                 },
                 onDeleteSession = { session ->
                     onAction(HomeIntent.DeleteSession(session.id))
-                    menuSessionId = null
                 },
                 isGuest = uiState.isGuest,
                 viewerName = uiState.viewerName,
@@ -591,11 +590,8 @@ private fun topBarTitle(uiState: HomeUiState, currentSession: SessionUiModel?): 
 fun DrawerContent(
     modifier: Modifier = Modifier,
     sessions: List<SessionUiModel>,
-    menuSessionId: String? = null,
-    onDismissMenu: () -> Unit = {},
     onNewChat: () -> Unit = {},
     onSessionClick: (String) -> Unit = {},
-    onSessionLongPress: (String) -> Unit = {},
     onRenameSession: (SessionUiModel) -> Unit = {},
     onTogglePinSession: (SessionUiModel) -> Unit = {},
     onDeleteSession: (SessionUiModel) -> Unit = {},
@@ -671,13 +667,10 @@ fun DrawerContent(
                         val session = pinnedSessions[i]
                         SessionRow(
                             session = session,
-                            isMenuExpanded = menuSessionId == session.id,
                             onSessionClick = onSessionClick,
-                            onSessionLongPress = onSessionLongPress,
-                            onDismissMenu = onDismissMenu,
-                            onRename = { onRenameSession(session) },
-                            onTogglePin = { onTogglePinSession(session) },
-                            onDelete = { onDeleteSession(session) },
+                            onRenameSession = onRenameSession,
+                            onTogglePinSession = onTogglePinSession,
+                            onDeleteSession = onDeleteSession,
                         )
                     }
                 }
@@ -690,13 +683,10 @@ fun DrawerContent(
                     val session = normalSessions[i]
                     SessionRow(
                         session = session,
-                        isMenuExpanded = menuSessionId == session.id,
                         onSessionClick = onSessionClick,
-                        onSessionLongPress = onSessionLongPress,
-                        onDismissMenu = onDismissMenu,
-                        onRename = { onRenameSession(session) },
-                        onTogglePin = { onTogglePinSession(session) },
-                        onDelete = { onDeleteSession(session) },
+                        onRenameSession = onRenameSession,
+                        onTogglePinSession = onTogglePinSession,
+                        onDeleteSession = onDeleteSession,
                     )
                 }
             }
@@ -778,20 +768,22 @@ fun DrawerContent(
  * - 普通会话：不显示头像，直接显示标题；
  * - 长按触发 [onSessionLongPress]，短按触发 [onSessionClick]；
  * - 单行省略避免侧栏被长标题撑爆。
- * - 长按菜单作为子组件渲染在本行 Box 内，DropdownMenu 的 anchor 自动绑定到该行，
- *   避免脱离 anchor 跑到屏幕中央或原点的问题。
+ * - 长按菜单作为子组件渲染在本行 Box 内；菜单自包含状态由本组件维护，无需外部传 menuSessionId。
+ * - 菜单锚到按压点：与 [ChatMessageItem] 同样用「0 大小 offset Box 嵌入 DropdownMenu」方案，
+ *   让 Popup 的 anchor 父节点精准落在手指位置。
  */
 @Composable
 private fun SessionRow(
     session: SessionUiModel,
-    isMenuExpanded: Boolean,
     onSessionClick: (String) -> Unit,
-    onSessionLongPress: (String) -> Unit,
-    onDismissMenu: () -> Unit,
-    onRename: () -> Unit,
-    onTogglePin: () -> Unit,
-    onDelete: () -> Unit,
+    onRenameSession: (SessionUiModel) -> Unit,
+    onTogglePinSession: (SessionUiModel) -> Unit,
+    onDeleteSession: (SessionUiModel) -> Unit,
 ) {
+    var menuExpanded by remember(session.id) { mutableStateOf(false) }
+    val density = LocalDensity.current
+    var menuAnchorOffset by remember(session.id) { mutableStateOf(DpOffset.Zero) }
+
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -804,10 +796,19 @@ private fun SessionRow(
                     },
                     shape = RoundedCornerShape(12.dp),
                 )
-                .combinedClickable(
-                    onClick = { onSessionClick(session.id) },
-                    onLongClick = { onSessionLongPress(session.id) },
-                )
+                // 改用 pointerInput + detectTapGestures：combinedClickable 拿不到按压点 Offset，
+                // 这里需要把菜单锚到手指位置，所以必须用 detectTapGestures 的 onLongPress。
+                .pointerInput(session.id) {
+                    detectTapGestures(
+                        onTap = { onSessionClick(session.id) },
+                        onLongPress = { pressOffset ->
+                            menuAnchorOffset = with(density) {
+                                DpOffset(pressOffset.x.toDp(), pressOffset.y.toDp())
+                            }
+                            menuExpanded = true
+                        },
+                    )
+                }
                 .padding(horizontal = if (session.isAgent) 12.dp else 24.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -826,32 +827,86 @@ private fun SessionRow(
                 modifier = Modifier.weight(1f),
             )
         }
-        DropdownMenu(
-            expanded = isMenuExpanded,
-            onDismissRequest = onDismissMenu,
-        ) {
-            if (!session.isAgent) {
-                DropdownMenuItem(
-                    text = { Text("重命名") },
-                    onClick = onRename,
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(if (session.isPinned) "取消置顶" else "置顶") },
-                onClick = onTogglePin,
-            )
-            DropdownMenuItem(
-                text = { Text("删除") },
-                onClick = onDelete,
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = null,
+        // 菜单锚点 Box：Popup 的 anchor 来自它在 Compose 树中直接的 Layout 父节点。
+        // 把 DropdownMenu 嵌到 0 大小 Box 内作为子节点，anchorBounds = (按压点, 0, 0)，
+        // DropdownMenu 默认「左上对齐 anchor 左上」即可精准锚到按压点。
+        if (menuExpanded) {
+            Box(
+                modifier = Modifier
+                    .offset(menuAnchorOffset.x, menuAnchorOffset.y)
+                    .size(0.dp)
+            ) {
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                    offset = DpOffset.Zero,
+                    // iOS 弹窗风格：与 ChatMessageItem 的助手菜单保持一致。
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 8.dp,
+                    containerColor = Color.White.copy(alpha = 0.96f),
+                    border = BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.06f)),
+                ) {
+                    if (!session.isAgent) {
+                        DropdownMenuItem(
+                            text = { Text("重命名") },
+                            onClick = {
+                                menuExpanded = false
+                                onRenameSession(session)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.DriveFileRenameOutline,
+                                    contentDescription = null,
+                                )
+                            },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                        IosMenuDivider()
+                    }
+                    DropdownMenuItem(
+                        text = { Text(if (session.isPinned) "取消置顶" else "置顶") },
+                        onClick = {
+                            menuExpanded = false
+                            onTogglePinSession(session)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.PushPin,
+                                contentDescription = null,
+                            )
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     )
-                },
-            )
+                    IosMenuDivider()
+                    DropdownMenuItem(
+                        text = { Text("删除") },
+                        onClick = {
+                            menuExpanded = false
+                            onDeleteSession(session)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = null,
+                            )
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * iOS 弹窗风格菜单项之间的细分割线，与 ChatMessageList 中的实现保持一致。
+ */
+@Composable
+private fun IosMenuDivider() {
+    HorizontalDivider(
+        thickness = 0.5.dp,
+        color = Color.Black.copy(alpha = 0.08f),
+    )
 }
 
 @Preview(showBackground = true)
