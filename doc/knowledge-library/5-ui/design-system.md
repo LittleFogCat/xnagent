@@ -176,12 +176,19 @@ XNAgent 使用 Material3 作为设计语言基础，叠加一组业务色与少�
 | `contentPadding` | `PaddingValues(horizontal = 16.dp, vertical = 8.dp)` |
 | `leadingIcon` | **必填**：所有菜单项必须带图标，统一「图标 + 文字」格式 |
 
-**项间分隔线**：使用私有组件 `IosMenuDivider`，参数：
+**项间分隔线**：使用公共组件 `IosMenuDivider`，参数：
 
 - `thickness = 0.5.dp`
 - `color = Color.Black.copy(alpha = 0.08f)`
 
-`IosMenuDivider` 当前在 `app/src/main/java/tech/xiaoniu/xnagent/ui/component/ChatMessageList.kt` 和 `ui/screen/home/HomeScreen.kt` 各定义一份（仅 4 行代码，待出现第三个使用点再抽公共组件）。
+`IosMenuDivider` 已抽到 `app/src/main/java/tech/xiaoniu/xnagent/ui/component/IosMenuDivider.kt`，所有 iOS Popover 风格菜单统一引用。
+
+**适用范围**：本规范适用于所有浮动弹出的菜单 / 选择器，包括但不限于：
+
+- `DropdownMenu`（长按消息、长按会话条目等触发）
+- `ExposedDropdownMenu`（首页「模型选择器」 `DropdownSelector.kt`）
+
+模态对话框 `AlertDialog` 跟浮动菜单视觉场景不同，**不适用本规范**，沿用 Material3 默认即可。
 
 **锚点策略**（关键技术点，违反会导致菜单跑偏）：
 
