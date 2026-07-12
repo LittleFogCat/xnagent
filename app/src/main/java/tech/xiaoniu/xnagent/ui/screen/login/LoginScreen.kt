@@ -234,7 +234,6 @@ fun LoginContent(
                     text = if (uiState.isRegisterMode) "注册 XN Agent" else "登录 XN Agent",
                     style = MaterialTheme.typography.headlineMedium,
                     color = primaryText,
-                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = if (uiState.isRegisterMode) {
