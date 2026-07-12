@@ -95,6 +95,7 @@ import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.R
 import tech.xiaoniu.xnagent.ui.component.ChatMessageList
 import tech.xiaoniu.xnagent.ui.component.DropdownSelector
+import tech.xiaoniu.xnagent.ui.component.IosMenuDivider
 import tech.xiaoniu.xnagent.ui.component.UserAvatar
 import tech.xiaoniu.xnagent.ui.model.AgentMode
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
@@ -896,17 +897,6 @@ private fun SessionRow(
             }
         }
     }
-}
-
-/**
- * iOS 弹窗风格菜单项之间的细分割线，与 ChatMessageList 中的实现保持一致。
- */
-@Composable
-private fun IosMenuDivider() {
-    HorizontalDivider(
-        thickness = 0.5.dp,
-        color = Color.Black.copy(alpha = 0.08f),
-    )
 }
 
 @Preview(showBackground = true)
