@@ -74,6 +74,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import tech.xiaoniu.xnagent.ui.model.LoginUiState
+import tech.xiaoniu.xnagent.ui.theme.BrandBlue
+import tech.xiaoniu.xnagent.ui.theme.HeroShape
 
 /**
  * 登录/注册页面。
@@ -108,7 +110,7 @@ fun LoginContent(
     val backgroundColor = Color(0xFFF4F8FB)
     val primaryText = Color(0xFF0F172A)
     val secondaryText = Color(0xFF475569)
-    val accentColor = Color(0xFF0EA5E9)
+    val accentColor = BrandBlue
     val accentSoft = Color(0xFFDFF7FF)
     val cardBorder = Color(0xFFE2E8F0)
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -137,7 +139,7 @@ fun LoginContent(
                     brush = Brush.verticalGradient(
                         colors = listOf(Color(0xFFE0F2FE), backgroundColor),
                     ),
-                    shape = RoundedCornerShape(bottomStart = 36.dp, bottomEnd = 36.dp),
+                    shape = HeroShape,
                 )
         )
         Box(
@@ -232,7 +234,6 @@ fun LoginContent(
                     text = if (uiState.isRegisterMode) "注册 XN Agent" else "登录 XN Agent",
                     style = MaterialTheme.typography.headlineMedium,
                     color = primaryText,
-                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = if (uiState.isRegisterMode) {
@@ -247,7 +248,7 @@ fun LoginContent(
 
             // 核心表单区根据登录/注册模式切换不同字段和提交流程。
             Card(
-                shape = RoundedCornerShape(30.dp),
+                shape = HeroShape,
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
@@ -263,7 +264,7 @@ fun LoginContent(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFF1F5F9), RoundedCornerShape(18.dp))
+                            .background(Color(0xFFF1F5F9), MaterialTheme.shapes.extraLarge)
                             .padding(4.dp),
                     ) {
                         LoginModeTab(
@@ -299,7 +300,7 @@ fun LoginContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .bringIntoViewOnFocus(),
-                        shape = RoundedCornerShape(18.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
                         colors = fieldColors,
                     )
 
@@ -316,7 +317,7 @@ fun LoginContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .bringIntoViewOnFocus(),
-                        shape = RoundedCornerShape(18.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
                         colors = fieldColors,
                     )
 
@@ -324,7 +325,7 @@ fun LoginContent(
                     if (!uiState.isRegisterMode && uiState.loginCaptchaRequired) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                             color = accentSoft,
                         ) {
                             CaptchaQuestionImage(
@@ -348,7 +349,7 @@ fun LoginContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .bringIntoViewOnFocus(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                             colors = fieldColors,
                         )
 
@@ -365,7 +366,7 @@ fun LoginContent(
                     if (uiState.isRegisterMode) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                             color = accentSoft,
                         ) {
                             if (uiState.captchaQuestion.isBlank()) {
@@ -398,7 +399,7 @@ fun LoginContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .bringIntoViewOnFocus(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                             colors = fieldColors,
                         )
 
@@ -407,7 +408,7 @@ fun LoginContent(
                     // 统一在表单底部展示一次性提示、错误反馈和流程说明。
                             enabled = !uiState.isSubmitting,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                         ) {
                             Text(text = if (uiState.codeRequested) "重新发送验证码" else "发送验证码")
                         }
@@ -434,7 +435,7 @@ fun LoginContent(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .bringIntoViewOnFocus(),
-                                shape = RoundedCornerShape(18.dp),
+                                shape = MaterialTheme.shapes.extraLarge,
                                 colors = fieldColors,
                             )
 
@@ -442,7 +443,7 @@ fun LoginContent(
                                 onClick = { onAction(LoginIntent.CompleteRegister) },
                                 enabled = !uiState.isSubmitting,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
+                                shape = MaterialTheme.shapes.extraLarge,
                             ) {
                                 Text("完成注册")
                             }
@@ -452,7 +453,7 @@ fun LoginContent(
                             onClick = { onAction(LoginIntent.Login) },
                             enabled = !uiState.isSubmitting,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                         ) {
                             Text("登录")
                         }

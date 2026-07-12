@@ -17,7 +17,7 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
+    primary = BrandBlue,
     secondary = PurpleGrey40,
     tertiary = Pink40,
 
@@ -54,6 +54,7 @@ fun XNAgentTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = XnShapes,
         content = content
     )
 }

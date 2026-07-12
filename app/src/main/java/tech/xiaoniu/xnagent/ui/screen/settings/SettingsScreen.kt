@@ -392,7 +392,7 @@ private fun SettingsSectionCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFF8FAFC), RoundedCornerShape(20.dp))
+            .background(Color(0xFFF8FAFC), MaterialTheme.shapes.extraLarge)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,

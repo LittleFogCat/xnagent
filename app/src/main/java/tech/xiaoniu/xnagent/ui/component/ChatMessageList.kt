@@ -15,19 +15,23 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,11 +49,14 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -69,12 +76,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -108,6 +118,7 @@ fun ChatMessageItem(
     }
 
     val context = LocalContext.current
+    val density = LocalDensity.current
     val clipboardManager = remember(context) {
         context.getSystemService(ClipboardManager::class.java)
     }
@@ -117,6 +128,9 @@ fun ChatMessageItem(
     var showEditDialog by rememberSaveable("${message.id}_edit") { mutableStateOf(false) }
     var showDeleteConfirm by rememberSaveable("${message.id}_delete") { mutableStateOf(false) }
     var editDraft by rememberSaveable(message.id, message.content) { mutableStateOf(message.content) }
+    // 长按手指位置 → DropdownMenu.offset，让菜单锚在按压点附近（WeChat / iMessage 那种行为）。
+    // 不放在 rememberSaveable 里：长按是瞬时交互，跨配置变更保留没意义。
+    var actionMenuOffset by remember(message.id) { mutableStateOf(DpOffset.Zero) }
     val shouldShowReasoning = message.isThinking || reasoningExpanded
 
     Row(
@@ -131,10 +145,24 @@ fun ChatMessageItem(
             Box(
                 modifier = Modifier
                     .widthIn(max = if (isUser) maxWidth * 0.77f else maxWidth)
-                    .combinedClickable(
-                        onClick = { },
-                        onLongClick = { showActionMenu = true }
-                    )
+                    // 用 detectTapGestures 替代 combinedClickable：一个 pointerInput 同时负责
+                    // 「轻点无操作 + 长按出菜单」，onLongPress 直接拿到按压点 Offset，不用再单独
+                    // 起一个 pointerInput 捕获位置。detectTapGestures 默认不画 ripple，气泡上
+                    // 不会出现涟漪，正好符合聊天场景。
+                    .pointerInput(message.id) {
+                        detectTapGestures(
+                            onPress = {
+                                // 空 onPress 让 detectTapGestures 仍消费 DOWN，避免把长按事件
+                                // 让出去；菜单触发逻辑全部走 onLongPress。
+                            },
+                            onLongPress = { pressOffset ->
+                                actionMenuOffset = with(density) {
+                                    DpOffset(pressOffset.x.toDp(), pressOffset.y.toDp())
+                                }
+                                showActionMenu = true
+                            }
+                        )
+                    }
                     .background(
                         color = if (isUser) {
                             colorResource(R.color.chat_bubble_bg_user)
@@ -142,8 +170,8 @@ fun ChatMessageItem(
                             colorResource(R.color.chat_bubble_bg_assist)
                         },
                         shape = RoundedCornerShape(
-                            topStart = if (isUser) 16.dp else 4.dp,
-                            topEnd = if (isUser) 4.dp else 16.dp,
+                            topStart = if (isUser) 16.dp else 8.dp,
+                            topEnd = if (isUser) 8.dp else 16.dp,
                             bottomStart = 16.dp,
                             bottomEnd = 16.dp
                         )
@@ -244,97 +272,140 @@ fun ChatMessageItem(
                     }
                 }
 
-                DropdownMenu(
-                    expanded = showActionMenu,
-                    onDismissRequest = { showActionMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("复制") },
-                        onClick = {
-                            clipboardManager?.setPrimaryClip(
-                                ClipData.newPlainText("message", message.content)
-                            )
-                            showActionMenu = false
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.ContentCopy,
-                                contentDescription = null,
-                            )
-                        },
-                    )
-                    if (isUser) {
-                        DropdownMenuItem(
-                            text = { Text("修改并重发") },
-                            onClick = {
-                                editDraft = message.content
-                                showActionMenu = false
-                                showEditDialog = true
-                            },
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("选择文字") },
-                        onClick = {
-                            showActionMenu = false
-                            showSelectionDialog = true
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (isFavorited) "已收藏" else "收藏") },
-                        onClick = {
-                            if (!isFavorited) {
-                                onFavoriteMessage(message.id)
-                            }
-                            showActionMenu = false
-                        },
-                        enabled = !isFavorited,
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (isFavorited) {
-                                    Icons.Filled.Bookmark
-                                } else {
-                                    Icons.Outlined.BookmarkBorder
+                // 菜单锚点 Box：0 大小 + Modifier.offset 把它放到按压点。
+                // 关键：DropdownMenu 必须放在这个 Box **内部**作为子节点——Popup 的 anchor 来自它在 Compose
+                // 树中直接的 Layout 父节点（参见 AndroidPopup.android.kt: childCoordinates.parentLayoutCoordinates）。
+                // 作为同级兄弟时 Popup 的 parent 是外层气泡 Box，菜单就锚到气泡底部；嵌入到 0 大小 Box 内
+                // 后 Popup 的 parent 变成这个 0 大小 Box，anchorBounds = (pressOffset.x, pressOffset.y, 0, 0)，
+                // 再加上 DropdownMenu offset = DpOffset.Zero，「菜单左上对齐到 anchor 左上」就精准落在按压点。
+                if (showActionMenu) {
+                    Box(
+                        modifier = Modifier
+                            .offset(actionMenuOffset.x, actionMenuOffset.y)
+                            .size(0.dp)
+                    ) {
+                        DropdownMenu(
+                            expanded = showActionMenu,
+                            onDismissRequest = { showActionMenu = false },
+                            offset = DpOffset.Zero,
+                            // iOS 弹窗风格：大圆角 + 轻阴影 + 微透明白底 + 极细边框 + 项间 0.5dp 分隔线。
+                            shape = RoundedCornerShape(16.dp),
+                            shadowElevation = 8.dp,
+                            containerColor = Color.White.copy(alpha = 0.96f),
+                            border = BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.06f)),
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("复制") },
+                                onClick = {
+                                    clipboardManager?.setPrimaryClip(
+                                        ClipData.newPlainText("message", message.content)
+                                    )
+                                    showActionMenu = false
                                 },
-                                contentDescription = null,
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentCopy,
+                                        contentDescription = null,
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             )
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("删除") },
-                        onClick = {
-                            // 先关菜单再弹确认弹窗，避免 DropdownMenu 与 AlertDialog 同时占用焦点造成视觉混乱。
-                            showActionMenu = false
-                            showDeleteConfirm = true
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.DeleteOutline,
-                                contentDescription = null,
-                            )
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("分享") },
-                        onClick = {
-                            // 通过系统分享面板分享纯文本消息正文，不附加角色前缀 / 时间戳。
-                            // 加 FLAG_ACTIVITY_NEW_TASK：未来若从 Service / Notification / Widget 等
-                            // 非 Activity context 复用同一段逻辑，可直接调用而不会触发 AndroidRuntimeException。
-                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, message.content)
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            if (isUser) {
+                                IosMenuDivider()
+                                DropdownMenuItem(
+                                    text = { Text("修改并重发") },
+                                    onClick = {
+                                        editDraft = message.content
+                                        showActionMenu = false
+                                        showEditDialog = true
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Edit,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                )
                             }
-                            context.startActivity(Intent.createChooser(sendIntent, "分享到"))
-                            showActionMenu = false
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.Share,
-                                contentDescription = null,
+                            IosMenuDivider()
+                            DropdownMenuItem(
+                                text = { Text("选择文字") },
+                                onClick = {
+                                    showActionMenu = false
+                                    showSelectionDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.SelectAll,
+                                        contentDescription = null,
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             )
-                        },
-                    )
+                            IosMenuDivider()
+                            DropdownMenuItem(
+                                text = { Text(if (isFavorited) "已收藏" else "收藏") },
+                                onClick = {
+                                    if (!isFavorited) {
+                                        onFavoriteMessage(message.id)
+                                    }
+                                    showActionMenu = false
+                                },
+                                enabled = !isFavorited,
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isFavorited) {
+                                            Icons.Filled.Bookmark
+                                        } else {
+                                            Icons.Outlined.BookmarkBorder
+                                        },
+                                        contentDescription = null,
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                            IosMenuDivider()
+                            DropdownMenuItem(
+                                text = { Text("删除") },
+                                onClick = {
+                                    // 先关菜单再弹确认弹窗，避免 DropdownMenu 与 AlertDialog 同时占用焦点造成视觉混乱。
+                                    showActionMenu = false
+                                    showDeleteConfirm = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.DeleteOutline,
+                                        contentDescription = null,
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                            IosMenuDivider()
+                            DropdownMenuItem(
+                                text = { Text("分享") },
+                                onClick = {
+                                    // 通过系统分享面板分享纯文本消息正文，不附加角色前缀 / 时间戳。
+                                    // 加 FLAG_ACTIVITY_NEW_TASK：未来若从 Service / Notification / Widget 等
+                                    // 非 Activity context 复用同一段逻辑，可直接调用而不会触发 AndroidRuntimeException。
+                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, message.content)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "分享到"))
+                                    showActionMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Share,
+                                        contentDescription = null,
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
