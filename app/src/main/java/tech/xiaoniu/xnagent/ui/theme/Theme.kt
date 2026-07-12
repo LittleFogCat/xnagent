@@ -54,6 +54,7 @@ fun XNAgentTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = XnShapes,
         content = content
     )
 }

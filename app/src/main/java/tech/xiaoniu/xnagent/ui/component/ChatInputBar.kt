@@ -3,7 +3,6 @@ package tech.xiaoniu.xnagent.ui.component
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Icon
@@ -22,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import tech.xiaoniu.xnagent.ui.theme.HeroShape
 
 /** 简化版聊天输入栏，可用于预览或简单场景。 */
 @Composable
@@ -49,7 +49,7 @@ fun ChatInputBar(
                         style = MaterialTheme.typography.bodyLarge
                     )
                 },
-                shape = RoundedCornerShape(24.dp),
+                shape = HeroShape,
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
