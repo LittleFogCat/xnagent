@@ -81,7 +81,7 @@ MainDestination.Settings                          │       │
    - 普通组不显示小标题，直接列条目；
    - 组内各自按 `updatedAt DESC` 排序，DAO 层 `ORDER BY isPinned DESC, updateTime DESC` 已保证总序。
 3. 条目右侧附智能体头像（智能体会话）或无头像（普通会话），标题为 `displayTitle`（智能体取 `agentName`，否则取 `title`）；
-4. 条目长按弹出下拉菜单（重命名 / 置顶切换 / 删除，智能体不显示重命名）；
+4. 条目长按弹出下拉菜单（重命名 / 置顶切换 / 删除，智能体不显示重命名）。**菜单视觉风格按 [design-system.md §6.7](./design-system.md#67-弹窗--菜单ios-popover-风格)（iOS Popover）；菜单左上角锚到按压点（Popup anchor 嵌入 0 大小 offset Box）**；
 5. 底部用户信息区：
    - 已登录：显示昵称、邮箱、「设置」按钮；
    - 游客：显示「游客」+「前往登录」按钮。
@@ -100,6 +100,8 @@ MainDestination.Settings                          │       │
 | 分享 | ✅ | ✅ |
 
 分享通过 `Intent.ACTION_SEND` + `text/plain` + `Intent.createChooser` 调起系统分享面板，内容为消息正文纯文本（无角色前缀 / 时间戳）。
+
+**视觉风格按 [design-system.md §6.7](./design-system.md#67-弹窗--菜单ios-popover-风格)（iOS Popover）；菜单左上角锚到按压点（Popup anchor 嵌入 0 大小 offset Box）**。
 
 ## 5. 路由与认证态的耦合
 
