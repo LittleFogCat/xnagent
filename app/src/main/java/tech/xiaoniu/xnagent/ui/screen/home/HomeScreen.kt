@@ -500,7 +500,7 @@ fun HomeScreenContent(
                                     },
                                     contentDescription = if (uiState.isResponding) "停止" else "发送",
                                     modifier = Modifier.padding(2.dp),
-                                    tint = colorResource(R.color.chat_send_button_bg)
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
