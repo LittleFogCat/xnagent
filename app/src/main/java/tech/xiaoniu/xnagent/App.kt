@@ -16,15 +16,19 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import tech.xiaoniu.xnagent.data.repository.AgentRepository
+import tech.xiaoniu.xnagent.data.repository.AgentRepositoryImpl
 import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.repository.AuthRepositoryImpl
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepository
 import tech.xiaoniu.xnagent.data.repository.FavoriteRepositoryImpl
 import tech.xiaoniu.xnagent.data.local.AuthStore
 import tech.xiaoniu.xnagent.data.local.MIGRATION_1_2
+import tech.xiaoniu.xnagent.data.local.MIGRATION_2_3
 import tech.xiaoniu.xnagent.data.local.PendingRetryQueue
 import tech.xiaoniu.xnagent.data.local.TokenRefreshHandler
 import tech.xiaoniu.xnagent.data.local.XNDatabase
+import tech.xiaoniu.xnagent.data.local.dao.AgentDao
 import tech.xiaoniu.xnagent.data.local.dao.ChatDao
 import tech.xiaoniu.xnagent.data.local.network.HttpStreamingLoggingInterceptor
 import tech.xiaoniu.xnagent.data.local.network.NetworkConfig
@@ -64,6 +68,13 @@ class AppModule {
         @ApplicationContext context: Context,
         json: Json,
     ): FavoriteRepository = FavoriteRepositoryImpl(context, json)
+
+    @Provides
+    @Singleton
+    fun provideAgentRepository(
+        agentDao: AgentDao,
+        chatApi: ChatApi,
+    ): AgentRepository = AgentRepositoryImpl(agentDao, chatApi)
 
     @Provides
     @Singleton
@@ -230,7 +241,7 @@ class DataModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): XNDatabase {
         return Room.databaseBuilder(context, XNDatabase::class.java, "xnagent.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .fallbackToDestructiveMigration(dropAllTables = BuildConfig.DEBUG)
             .build()
     }
@@ -238,6 +249,10 @@ class DataModule {
     @Provides
     @Singleton
     fun provideChatDao(database: XNDatabase): ChatDao = database.chatDao()
+
+    @Provides
+    @Singleton
+    fun provideAgentDao(database: XNDatabase): AgentDao = database.agentDao()
 
     @Provides
     @Singleton

@@ -15,11 +15,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.common.Constants
 import tech.xiaoniu.xnagent.common.util.currentTimeF
-import tech.xiaoniu.xnagent.data.remote.dto.AgentInfoDto
 import tech.xiaoniu.xnagent.data.remote.dto.ChatDto
+import tech.xiaoniu.xnagent.data.remote.dto.ChatMessageDto
 import tech.xiaoniu.xnagent.data.remote.dto.ChatRequest
 import tech.xiaoniu.xnagent.data.remote.dto.ChatTargetDto
 import tech.xiaoniu.xnagent.data.remote.dto.ThinkingConfig
+import tech.xiaoniu.xnagent.data.repository.AgentRepository
 import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.local.entity.Session
 import tech.xiaoniu.xnagent.data.repository.FavoriteMessage
@@ -44,6 +45,7 @@ class HomeViewModel @Inject constructor(
     private val homeRepository: HomeRepository,
     private val authRepository: AuthRepository,
     private val favoriteRepository: FavoriteRepository,
+    private val agentRepository: AgentRepository,
 ) : ViewModel() {
     private val tag = javaClass.simpleName
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -114,6 +116,8 @@ class HomeViewModel @Inject constructor(
                     state.copy(
                         currentSessionId = intent.sessionId,
                         sessions = state.sessions.map { it.copy(selected = it.id == intent.sessionId) },
+                        // 上一条会话未消费的高亮不能带到新会话，否则会在错误的消息上闪烁。
+                        highlight = null,
                     ).withConversation(emptyList())
                 }
                 loadSession(intent.sessionId)
@@ -132,6 +136,8 @@ class HomeViewModel @Inject constructor(
             is HomeIntent.DeleteSession -> deleteSession(intent.sessionId)
             is HomeIntent.RenameSession -> renameSession(intent.sessionId, intent.newTitle)
             HomeIntent.ClearConversation -> clearConversation()
+            is HomeIntent.HighlightMessage -> _uiState.update { it.copy(highlight = intent.highlight) }
+            HomeIntent.ConsumeHighlight -> _uiState.update { it.copy(highlight = null) }
             HomeIntent.ConsumeError -> _uiState.update { it.copy(errorMessage = null) }
         }
     }
@@ -154,6 +160,21 @@ class HomeViewModel @Inject constructor(
         observeAuthState()
         observeFavorites()
         observeAgents()
+        refreshAgentSources()
+    }
+
+    /**
+     * 拉取服务端智能体清单与绑定关系。
+     *
+     * 两者都失败也不影响本地自定义智能体的展示，因此这里只记日志。
+     */
+    private fun refreshAgentSources() {
+        viewModelScope.launch {
+            runCatching { agentRepository.refresh() }
+                .onFailure { Log.w(tag, "refreshAgentSources: refresh failed", it) }
+            runCatching { agentRepository.refreshBindings() }
+                .onFailure { Log.w(tag, "refreshAgentSources: refreshBindings failed", it) }
+        }
     }
 
     /** 监听可用模型列表，并尽量保持当前会话的模型选择不被刷新覆盖。 */
@@ -186,13 +207,10 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** 监听公开智能体列表，用于抽屉条目显示智能体头像 / 名称。 */
+    /** 监听合并后的智能体列表（服务端 + 本地覆盖 / 自定义），用于抽屉条目与提示词注入。 */
     private fun observeAgents() {
         viewModelScope.launch {
-            homeRepository.getAgents().catch {
-                Log.w(tag, "observeAgents: ${it.stackTraceToString()}")
-            }.collect { response ->
-                val agents = response.identities.map { it.toAgentUiModel() }
+            agentRepository.agents.collect { agents ->
                 _uiState.update { state ->
                     state.copy(
                         availableAgents = agents,
@@ -234,6 +252,9 @@ class HomeViewModel @Inject constructor(
                     }.onFailure {
                         Log.w(tag, "observeAuthState: syncLocalChatsToRemote failed", it)
                     }
+                    // 绑定关系随账号变化，登录后必须重新拉取，否则会沿用上个账号的「已添加」状态。
+                    runCatching { agentRepository.refreshBindings() }
+                        .onFailure { Log.w(tag, "observeAuthState: refreshBindings failed", it) }
                     refreshRemoteSessions()
                 } else {
                     // 游客模式下直接订阅本地数据库中的会话列表。
@@ -275,7 +296,9 @@ class HomeViewModel @Inject constructor(
     }
 
     /** 将新的会话列表应用到状态中，并尽量保留当前选中的会话。 */
-    private fun applySessionList(sessions: List<SessionUiModel>) {
+    private fun applySessionList(rawSessions: List<SessionUiModel>) {
+        // 统一在入口补全智能体信息：远端会话靠 chatTarget 命中，自定义智能体的会话靠 boundSessionId 反查。
+        val sessions = rawSessions.mergeAgentInfo(_uiState.value.availableAgents)
         // 选择下一会话 ID 的策略：
         // - 冷启动首次加载：强制 null → 进入"新对话"界面（不自动选中历史会话）。
         // - 用户主动选过、且该会话仍在列表中：保留选中。
@@ -328,11 +351,16 @@ class HomeViewModel @Inject constructor(
                     useRemote = authRepository.session.value.isLoggedIn,
                 )
             }.onSuccess { storedChat ->
-                storedChat ?: return@onSuccess
+                if (storedChat == null) {
+                    // 收藏跳转指向的会话可能已被删除：给出明确反馈，而不是留在空白界面。
+                    _uiState.update { it.copy(highlight = null, errorMessage = "会话不存在或已删除") }
+                    return@onSuccess
+                }
                 applyStoredChat(storedChat)
             }.onFailure {
                 if (it is CancellationException) throw it
                 Log.w(tag, "loadSession: sessionId=$sessionId", it)
+                _uiState.update { it.copy(highlight = null, errorMessage = "加载会话失败，请稍后重试") }
             }
         }
     }
@@ -346,6 +374,7 @@ class HomeViewModel @Inject constructor(
                 currentSessionModelId = state.currentModel?.id,
                 sessions = state.sessions.map { it.copy(selected = false) },
                 isGeneratingTitle = false,
+                highlight = null,
             ).withConversation(emptyList())
         }
     }
@@ -682,16 +711,24 @@ class HomeViewModel @Inject constructor(
 
             applyStoredChat(savedBaseChat, messagesOverride = baseMessages)
             val persistedSessionId = savedBaseChat.sessionId
-            // 智能体会话需要在 /api/chat 请求里携带 chatTarget，服务端据此注入人格提示词。
-            // 普通会话 agentId 为 null，chatTarget 留空，行为不变。
-            val chatTarget = _uiState.value.sessions
-                .firstOrNull { it.id == persistedSessionId }
-                ?.agentId
-                ?.takeIf { it.isNotBlank() }
-                ?.let { agentId -> ChatTargetDto(type = "identity", id = agentId) }
+            val agent = resolveAgentForSession(persistedSessionId, savedBaseChat)
+            // 智能体人格来源（本地为准）：
+            // - 本地写了提示词 → 头部注入 system 消息，并且不传 chatTarget，避免两套人格叠加；
+            // - 只改了名称 / 简介的系统智能体 → 继续传 chatTarget，保住服务端人格与权限计费；
+            // - 自定义智能体（服务端不认识其 id）→ 永远不传 chatTarget。
+            val requestMessages = buildList {
+                // 仅存在于请求体：不落盘、不产生气泡，重新生成时也会重新注入。
+                if (agent != null && agent.prompt.isNotBlank()) {
+                    add(ChatMessageDto(role = "system", content = agent.prompt))
+                }
+                addAll(baseMessages.map { it.toChatMessageDto() })
+            }
+            val chatTarget = agent
+                ?.takeIf { !it.isCustom && it.prompt.isBlank() }
+                ?.let { ChatTargetDto(type = "identity", id = it.id) }
             val request = ChatRequest(
                 model = currentModel.id,
-                messages = baseMessages.map { it.toChatMessageDto() },
+                messages = requestMessages,
                 chatTarget = chatTarget,
                 thinking = ThinkingConfig(
                     if (_uiState.value.isDeepThinkingEnabled) {
@@ -848,11 +885,11 @@ class HomeViewModel @Inject constructor(
     }
 
     /** 使用仓库返回的会话快照统一刷新当前会话 ID、模型选择和消息列表。 */
-    private fun applyStoredChat(storedChat: StoredChat, messagesOverride: List<ChatMessage>? = null) {
+    private suspend fun applyStoredChat(storedChat: StoredChat, messagesOverride: List<ChatMessage>? = null) {
         val selectedModel = findModel(storedChat.modelId)
-        // 把仓库返回的 chatTarget 转成 UI 用的 (agentId, agentName)：智能体身份型目标才认，
-        // 没匹配到的智能体显示名留给已加载的 agents 列表补上，避免泄露未知 id。
-        val agentBinding = storedChat.resolveAgentBinding(_uiState.value.availableAgents)
+        // 解析会话归属的智能体（远端 chatTarget 优先，其次本地绑定），用于抽屉条目展示。
+        val agent = resolveAgentForSession(storedChat.sessionId, storedChat)
+        val agentBinding = AgentBinding(agent?.id, agent?.name)
         _uiState.update { state ->
             val updatedSessions = if (state.sessions.any { it.id == storedChat.sessionId }) {
                 // 会话已在侧栏：把当前条目选中；只在原本缺失 agent 字段时回填，避免覆盖已经是智能体的旧条目。
@@ -889,16 +926,28 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * 把 [StoredChat.chatTarget] 翻译成抽屉用的智能体绑定。
+     * 解析会话归属的智能体（抽屉展示名 + 提示词注入共用）。
      *
-     * 仅在 `type == "identity"` 且提供了非空 id 时返回 ID；展示名只能从已缓存的智能体列表里命中，
-     * 避免把未知 id 直接暴露到 UI。仓库层的 StoredChat 在本地模式下固定为 null，这里也会短路返回。
+     * 顺序与 [AgentRepository.findBySession] 一致：先认远端 `chatTarget`（系统智能体，权威且跨端），
+     * 再退回本地绑定（自定义智能体）与 UI 已缓存的会话字段。
      */
-    private fun StoredChat.resolveAgentBinding(agents: List<AgentUiModel>): AgentBinding {
-        val target = chatTarget
-        if (target?.type != "identity" || target.id.isBlank()) return AgentBinding.EMPTY
-        val name = agents.firstOrNull { it.id == target.id }?.name
-        return AgentBinding(target.id, name)
+    private suspend fun resolveAgentForSession(sessionId: String, storedChat: StoredChat): AgentUiModel? {
+        val target = storedChat.chatTarget
+        val fromRemote = if (target?.type == "identity" && target.id.isNotBlank()) {
+            agentRepository.getAgent(target.id)
+        } else {
+            null
+        }
+        if (fromRemote != null) return fromRemote
+
+        agentRepository.findBySession(sessionId)?.let { return it }
+        // refreshBindings 尚未成功时退回到抽屉里已缓存的 agentId，避免依赖加载时序。
+        val cachedAgentId = _uiState.value.sessions
+            .firstOrNull { it.id == sessionId }
+            ?.agentId
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        return agentRepository.getAgent(cachedAgentId)
     }
 
     private fun findModel(modelId: String): ModelUiModel? {
@@ -936,22 +985,29 @@ class HomeViewModel @Inject constructor(
         )
     }
 
-    private fun AgentInfoDto.toAgentUiModel(): AgentUiModel = AgentUiModel(
-        id = id,
-        name = name,
-    )
-
-    /** 智能体列表变更后刷新已有会话条目的展示字段（名称）。 */
+    /**
+     * 智能体列表变更后刷新已有会话条目的展示字段。
+     *
+     * - 已有 `agentId` 的会话（远端 chatTarget）只补名称；
+     * - 没有 `agentId` 的会话按智能体的 `boundSessionId` 反查（自定义智能体的会话在远端没有 chatTarget）。
+     *
+     * 不做「ID 集合未变化就跳过」的守卫：详情页改名后 ID 集合不变，但名称必须刷新。
+     */
     private fun List<SessionUiModel>.mergeAgentInfo(agents: List<AgentUiModel>): List<SessionUiModel> {
         if (isEmpty() || agents.isEmpty()) return this
         val agentMap = agents.associateBy { it.id }
-        // 守卫：智能体 ID 集合未变化时跳过全量重建，避免 observeAgents 重复触发时的不必要 copy。
-        val existingIds = mapNotNull { it.agentId }.toSet()
-        val newIds = agents.map { it.id }.toSet()
-        if (existingIds.isNotEmpty() && existingIds == newIds) return this
+        val agentBySession = agents
+            .filter { it.isBound }
+            .associateBy { it.boundSessionId }
         return map { session ->
-            val agent = session.agentId?.let { agentMap[it] }
-            if (agent == null) session else session.copy(agentName = agent.name)
+            val boundAgentId = session.agentId?.takeIf { it.isNotBlank() }
+            if (boundAgentId != null) {
+                val agent = agentMap[boundAgentId] ?: return@map session
+                session.copy(agentName = agent.name)
+            } else {
+                val bound = agentBySession[session.id] ?: return@map session
+                session.copy(agentId = bound.id, agentName = bound.name)
+            }
         }
     }
 

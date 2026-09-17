@@ -1,6 +1,7 @@
 package tech.xiaoniu.xnagent.ui.screen.home
 
 import tech.xiaoniu.xnagent.ui.model.AgentMode
+import tech.xiaoniu.xnagent.ui.model.MessageHighlight
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
 
 /**
@@ -46,6 +47,12 @@ sealed class HomeIntent {
 
     /** 清空当前会话的全部消息（保留会话本身和标题）。 */
     object ClearConversation : HomeIntent()
+
+    /** 高亮并定位到指定消息（收藏跳转使用）。 */
+    data class HighlightMessage(val highlight: MessageHighlight) : HomeIntent()
+
+    /** 消费一次性高亮事件，避免残留在下个会话重复闪烁。 */
+    object ConsumeHighlight : HomeIntent()
 
     /** 消费一次性错误事件，避免重复展示。 */
     object ConsumeError : HomeIntent()

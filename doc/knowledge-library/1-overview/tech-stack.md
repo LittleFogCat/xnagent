@@ -67,7 +67,7 @@ Hilt 模块集中在 `App.kt`：`AppModule`（业务 / JSON / 配置）、`Netwo
 
 | 库 | 版本 | 用途 | 备注 |
 | --- | --- | --- | --- |
-| `androidx.room:room-runtime` / `room-ktx` | **2.8.3** | 本地聊天会话与消息存储 | `XNDatabase`（v1，启用 `fallbackToDestructiveMigration(dropAllTables = true)`） |
+| `androidx.room:room-runtime` / `room-ktx` | **2.8.3** | 本地会话 / 消息 / 智能体存储 | `XNDatabase`（v3：`exportSchema = true` + `room.schemaLocation`，生成的 `app/schemas/…/N.json` 随代码提交；手工迁移在 `Migrations.kt`。`fallbackToDestructiveMigration(dropAllTables = BuildConfig.DEBUG)` 只在 debug 静默清库，release 缺 Migration 会崩溃） |
 | `androidx.room:room-compiler` | 2.8.3 | 注解处理 | KSP |
 | SharedPreferences | 系统内置 | `AuthStore`（auth_store）、`FavoriteRepositoryImpl`（favorite_store） | 收藏以 JSON 字符串持久化 |
 

@@ -99,6 +99,7 @@ import tech.xiaoniu.xnagent.ui.component.UserAvatar
 import tech.xiaoniu.xnagent.ui.model.AgentMode
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
 import tech.xiaoniu.xnagent.ui.model.HomeUiState
+import tech.xiaoniu.xnagent.ui.model.MessageHighlight
 import tech.xiaoniu.xnagent.ui.model.MessageRole
 import tech.xiaoniu.xnagent.ui.model.ModelUiModel
 import tech.xiaoniu.xnagent.ui.model.SessionUiModel
@@ -116,6 +117,7 @@ fun HomeScreen(
     onOpenLogin: () -> Unit = {},
     initialSessionId: String? = null,
     onConsumeInitialSessionId: () -> Unit = {},
+    initialHighlight: MessageHighlight? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState(HomeUiState())
@@ -125,12 +127,14 @@ fun HomeScreen(
         viewModel.dispatch(HomeIntent.Initialize)
     }
 
-    // 上层（例如设置页添加智能体）若指定了会话 ID，在首次进入时选中并消费，
+    // 上层（例如设置页添加智能体 / 收藏跳转）若指定了会话 ID，在首次进入时选中并消费，
     // 避免后续重复触发或被路由切换再次读到。
-    LaunchedEffect(initialSessionId) {
+    // 必须先 SelectSession 再 HighlightMessage：SelectSession 会清空上一条会话残留的高亮。
+    LaunchedEffect(initialSessionId, initialHighlight) {
         val sessionId = initialSessionId
         if (!sessionId.isNullOrBlank()) {
             viewModel.dispatch(HomeIntent.SelectSession(sessionId))
+            initialHighlight?.let { viewModel.dispatch(HomeIntent.HighlightMessage(it)) }
             onConsumeInitialSessionId()
         }
     }
@@ -376,6 +380,8 @@ fun HomeScreenContent(
                     },
                     favoritedMessageIds = uiState.favoriteMessageIds,
                     isResponding = uiState.isResponding,
+                    highlight = uiState.highlight,
+                    onHighlightConsumed = { onAction(HomeIntent.ConsumeHighlight) },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()

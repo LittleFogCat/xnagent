@@ -43,21 +43,47 @@
 - `HomeViewModel.observeModels` 在初始化时拉取一次，**优先保留当前会话已选模型**，避免刷新时模型跳变；
 - 本地兜底：`assets/model_config.json`（`HomeRepository.loadModelConfig`），仅在远端拉取失败时使用。
 
-### 2.2 智能体（公开 Identity）
+### 2.2 智能体（公开 Identity + 本地智能体库）
 
-- 来源：`GET /api/chat/agents`；
-- 使用场景：
-  - `SettingsScreen` 中「智能体」区域列出全部可添加智能体；
-  - `SettingsViewModel.addAgentToChat` 调用 `createChat` 创建绑定会话；
-- 同一用户对同一 `identity` 智能体只能保留一条绑定会话（服务端限制，详见 `chat.md` 的「创建聊天记录」）。
-- 抽屉展示：`HomeViewModel.observeAgents` 缓存智能体列表到 `availableAgents`，会话条目按 `chatTarget.id` 合并展示智能体名称 / 头像（当前仅展示首字母占位头像）。
+**来源与合并**：服务端 `GET /api/chat/agents` 是「有哪些智能体」的权威来源，本地 `agent` 表（Room v3 新增）只承载对智能体的本地认知。`AgentRepositoryImpl` 合并后由 `StateFlow<List<AgentUiModel>>` 输出，`HomeViewModel` 与 `SettingsViewModel` 都订阅它（`HomeRepository.getAgents()` 已删除，`AgentRepository` 是唯一来源）。
+
+`agent` 表一行 = 本地对某个智能体的认知，`id` 是服务端 `identity` id 或本地生成的 `local-<uuid>`。四种角色：
+
+| 行 | 条件 | 合并行为 |
+| --- | --- | --- |
+| 本地自定义 | `isCustom = true` | 服务端不存在该 identity，附加在列表尾部 |
+| 服务端覆盖 | 有本地行且字段被改过 | 本地字段覆盖服务端字段，`isOverridden = true` |
+| 隐藏 | `isHidden = true` | 仅列表不展示（设置页「已隐藏的智能体」区可恢复），可传 `chatTarget` |
+| 删除墓碑 | `isDeleted = true` | 把该服务端智能体从合并结果里剔除，避免下次 `refresh()` 后复活 |
+
+- **只有被改动过的行才落库**：未编辑 / 未隐藏的服务端智能体不写本地，避免本地库沦为服务端清单的镜像。
+- **`boundSessionId`（会话绑定）**：系统智能体从 `GET /api/chats` 的 `chatTarget.id` 反查（`refreshBindings()`，游客态该接口 401，失败时清空映射、下次成功拉取再填），权威且跨端；自定义智能体在远端没有 `chatTarget`，只能由 `bindSession()` 落本地。
+- **同一用户对同一 `identity` 智能体只能保留一条绑定会话**（服务端限制，详见 `api/chat.md` 的「创建聊天记录」）。详情页的「添加对话」正是先查已存在的绑定会话直接打开，查不到才 `createChat`——重复 `POST /api/chats` 会返回 500。
+- 抽屉展示：`HomeViewModel` 缓存合并结果到 `availableAgents`，会话条目按 `chatTarget.id` 或 `boundSessionId` 合并展示智能体名称 / 头像（当前仅展示首字母占位头像）。
+
+### 2.3 提示词与人格来源（本地为准）
+
+服务端 `/api/chat` 只有 `chatTarget`，**没有**提示词字段，所以本地提示词只能由客户端在请求体头部注入一条 `system` 消息（不落盘、不产生气泡）。`HomeViewModel.sendConversation` 的规则：
+
+- **本地提示词非空** → 注入 `system` 消息，且**不传** `chatTarget`：否则服务端原人格会与本地提示词叠加成两套人格；
+- **只改了名称 / 简介的系统智能体** → 继续传 `chatTarget`，保住服务端人格与权限计费（权限按模型 `chat:chat_free` / `chat:chat_paid` 校验，与 `chatTarget` 无关）；
+- **自定义智能体**（`isCustom`，服务端不认识其 id）→ 永远不传 `chatTarget`，传了会被拒。
+
+重新生成助手消息时同样会重新注入，因此提示词在编辑重发 / 重新生成路径下都生效。
+
+### 2.4 智能体管理（设置页 + 详情页）
+
+- 设置页「智能体」区：顶部固定「新建智能体」入口，下方按 `isHidden` 拆成 (可见, 已隐藏) 两组——可见组条目右侧在 `isBound` 时显示「已添加」徽标；已隐藏组只在非空时出现，提供「恢复」按钮（`agentRepository.setAgentHidden(id, false)`）。
+- 点击条目 / 「新建智能体」进入**智能体详情页**（`MainDestination.AgentDetail(agentId)`，`agentId == null` 为新建），可编辑**名称（必填）/ 简介 / 提示词**，`role` 只读展示（需求只要这三个字段）。
+- 详情页底部动作：保存 / 添加对话（已有绑定会话时文案为「打开已有对话」）/ 隐藏（或取消隐藏）/ 删除（`AlertDialog` 二次确认，删除成功后 `AgentDetailEvent.Closed` 退回设置页）。
+- **添加 / 删除 / 隐藏三种语义**：添加 = 新建本地自定义智能体；隐藏 = 仅列表不展示、可恢复；删除 = 永久移除（服务端智能体写墓碑，自定义智能体直接删行）。已创建的历史会话不受影响，仍保留在会话列表中。
 
 ## 3. 会话管理
 
 ### 3.1 存储双源
 
 - **远端**：`/api/chats*` 系列接口（`ChatApi`）；
-- **本地**：`Session` + `ChatMessage`（`ChatDao`，`XNDatabase` v2，启用 `fallbackToDestructiveMigration(dropAllTables = true)`）；
+- **本地**：`Session` + `ChatMessage` + `Agent`（`ChatDao` / `AgentDao`，`XNDatabase` v3；`exportSchema = true`，`app/schemas/…/N.json` 随代码提交。`fallbackToDestructiveMigration(dropAllTables = BuildConfig.DEBUG)` 只在 debug 包静默清库，release 包缺 Migration 时会直接崩溃）；
 - **来源选择**：`HomeRepository.loadStoredChat(sessionId, useRemote)` 与 `saveStoredChat(...)` 接受 `useRemote` 标志，`HomeViewModel` 根据 `authRepository.session.value.isLoggedIn` 自动传入。
 
 ### 3.2 同步策略
@@ -160,17 +186,21 @@ HomeViewModel.sendNewMessage
 
 ## 6. 消息收藏
 
-- 存储：`FavoriteRepositoryImpl` 使用 SharedPreferences（`favorite_store`）以 JSON 字符串持久化；
+- 存储：`FavoriteRepositoryImpl` 使用 SharedPreferences（`favorite_store`）以 JSON 字符串持久化；写入时正文取 `content.ifBlank { reasoningContent }`，纯思考消息才有内容可存；
 - 内存态：`StateFlow<List<FavoriteMessage>>`；
 - UI 写入：消息长按菜单 → `HomeIntent.FavoriteMessage` → `favoriteRepository.addFavorite`；
-- UI 展示：消息列表中已收藏消息的图标会高亮（`HomeUiState.favoriteMessageIds`）；设置页「我的收藏」区域展示完整列表并支持删除；
+- UI 展示：消息列表中已收藏消息的图标会高亮（`HomeUiState.favoriteMessageIds`）；设置页「我的收藏」区域展示完整列表；
+- **条目交互（参考微信收藏）**：点击整行跳转到对应会话并高亮定位，长按在按压点弹出菜单（复制 / 删除收藏）；列表项**不再常驻删除按钮**；
+- **跳转定位**：`SettingsViewModel.openFavorite(favorite)` → `SettingsEvent.OpenFavorite(sessionId, highlight)` → `MainViewModel.openChat(sessionId, highlight)` → `HomeUiState.pendingHighlight` → `HomeIntent.HighlightMessage` → `ChatMessageList` 滚动定位并闪烁两遍（定位规则与 `shouldFollowBottom` 的处理见 [`architecture.md` §9](../1-overview/architecture.md)）。收藏的 `sessionId` 可能为空（历史数据）或指向已删除的会话——前者在 `openFavorite` 里直接提示「该收藏未关联会话，无法跳转」，后者由主页在 `loadSession` 失败时提示「会话不存在或已删除」并清空高亮，不让界面停在空白；
 - 级联清理：`HomeRepository.deleteSession` 在删除会话时调用 `removeFavoritesBySessionId`，避免孤儿收藏指向不存在的会话。
 
-## 7. 智能体与收藏（设置页）
+## 7. 设置页
 
-- 智能体：`SettingsViewModel.addAgentToChat` 调用 `createChat` 创建一个绑定该智能体的远端会话，成功后 UI 提示「已添加」；
-- 收藏：设置页 `SettingsRow` 展开后列出 `FavoriteRepository.favorites`，每条支持「移除」；
-- 「清除本地数据」会同时清空本地聊天、收藏与登录态（详见 [`./auth.md`](./auth.md) 的「登出」一节）。
+- 智能体：见 §2.2 ~ §2.4（列表 → 详情页编辑 / 隐藏 / 删除，「添加对话」是详情页里的独立按钮）；
+- 收藏：`SettingsRow` 展开后列出 `FavoriteRepository.favorites`（见 §6）；
+- 跳转：设置页的两个跳转都由 `SettingsEvent` 上报给 `MainViewModel`（`OpenFavorite` → `openChat`；智能体详情由 `onOpenAgentDetail` → `openAgentDetail`）；
+- 提示：`SettingsUiState.noticeMessage` 由 `SnackbarHostState` 弹出后立即 `consumeNotice()` 消费。设置页是可长滚动页面，提示若渲染在 `Column` 最底部用户根本看不到，观感等同于「点了没反应」——这正是「已添加的智能体点了没反应」被误判的成因之一；
+- 「清除本地数据」会同时清空本地聊天、智能体、收藏与登录态（`SettingsViewModel.clearLocalData` 依次调用 `homeRepository.clearLocalChats()` / `agentRepository.clearAgents()` / `favoriteRepository.clearFavorites()` / `authRepository.logout()`，详见 [`./auth.md`](./auth.md) 的「登出」一节）。
 
 ## 8. 游客限制
 

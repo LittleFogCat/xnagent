@@ -3,7 +3,6 @@ package tech.xiaoniu.xnagent.data.repository
 import kotlinx.coroutines.flow.Flow
 import tech.xiaoniu.xnagent.data.ModelConfig
 import tech.xiaoniu.xnagent.data.local.entity.Session
-import tech.xiaoniu.xnagent.data.remote.dto.AgentsResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ChatListResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ChatRequest
 import tech.xiaoniu.xnagent.data.remote.dto.ChatResponse
@@ -32,9 +31,6 @@ interface HomeRepository {
 
     /** 拉取当前可用模型和默认模型。 */
     fun getModels(): Flow<ModelsResponse>
-
-    /** 拉取服务端公开的智能体列表。 */
-    fun getAgents(): Flow<AgentsResponse>
 
     /** 拉取当前账号的聊天列表。 */
     fun getChats(): Flow<ChatListResponse>

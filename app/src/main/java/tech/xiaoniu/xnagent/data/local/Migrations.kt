@@ -21,3 +21,31 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
         db.execSQL("ALTER TABLE session ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+/**
+ * v2 → v3：新增 agent 表，用于存放本地自定义智能体与服务端智能体的本地覆盖 / 墓碑。
+ *
+ * 非破坏性迁移：老会话与消息全部保留，新表初始为空。
+ *
+ * 建表 SQL 逐字取自 Room 生成的 `app/schemas/…/3.json#createSql`（含 `IF NOT EXISTS`
+ * 与反引号），保证运行期 schema 校验不因列定义差异而失败。
+ */
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `agent` (" +
+                "`id` TEXT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`role` TEXT NOT NULL, " +
+                "`description` TEXT NOT NULL, " +
+                "`prompt` TEXT NOT NULL, " +
+                "`avatarUrl` TEXT, " +
+                "`isCustom` INTEGER NOT NULL, " +
+                "`isHidden` INTEGER NOT NULL, " +
+                "`isDeleted` INTEGER NOT NULL, " +
+                "`boundSessionId` TEXT, " +
+                "`updateTime` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`id`))",
+        )
+    }
+}
