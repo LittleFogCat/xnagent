@@ -22,7 +22,6 @@ import tech.xiaoniu.xnagent.data.local.PendingRetryOp
 import tech.xiaoniu.xnagent.data.local.PendingRetryQueue
 import tech.xiaoniu.xnagent.data.remote.api.ChatApi
 import tech.xiaoniu.xnagent.data.remote.api.StreamChatApi
-import tech.xiaoniu.xnagent.data.remote.dto.AgentsResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ChatDto
 import tech.xiaoniu.xnagent.data.remote.dto.ChatListResponse
 import tech.xiaoniu.xnagent.data.remote.dto.ChatMessageDto
@@ -201,10 +200,6 @@ class HomeRepositoryImpl @Inject constructor(
 
     override fun getModels(): Flow<ModelsResponse> = flow {
         emit(chatApi.getModels())
-    }.flowOn(Dispatchers.IO)
-
-    override fun getAgents(): Flow<AgentsResponse> = flow {
-        emit(chatApi.getAgents())
     }.flowOn(Dispatchers.IO)
 
     // ---- 聊天记录 CRUD ----

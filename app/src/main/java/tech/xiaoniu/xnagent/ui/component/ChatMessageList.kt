@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.keyframes
@@ -40,7 +41,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,6 +72,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -91,9 +93,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import tech.xiaoniu.xnagent.R
 import tech.xiaoniu.xnagent.ui.model.ChatMessage
+import tech.xiaoniu.xnagent.ui.model.MessageHighlight
 import tech.xiaoniu.xnagent.ui.model.MessageRole
 
 private const val REASONING_EXPAND_ANIMATION_DURATION_MS = 220
+
+/** 收藏跳转高亮的单次渐变时长；亮 + 灭为一轮，共跑两轮。 */
+private const val HIGHLIGHT_FADE_DURATION_MS = 260
+
+/** 高亮峰值不透明度，浅到不遮挡正文，又能让人一眼看到目标消息。 */
+private const val HIGHLIGHT_PEAK_ALPHA = 0.35f
 
 /**
  * 单条聊天消息项。
@@ -109,6 +118,8 @@ fun ChatMessageItem(
     onDeleteMessage: (String) -> Unit = {},
     onFavoriteMessage: (String) -> Unit = {},
     isFavorited: Boolean = false,
+    /** 高亮闪烁的不透明度，0 为不高亮。由 [ChatMessageList] 的收藏跳转定位驱动。 */
+    highlightAlpha: Float = 0f,
 ) {
     val isUser = message.role == MessageRole.USER
 
@@ -132,6 +143,14 @@ fun ChatMessageItem(
     // 不放在 rememberSaveable 里：长按是瞬时交互，跨配置变更保留没意义。
     var actionMenuOffset by remember(message.id) { mutableStateOf(DpOffset.Zero) }
     val shouldShowReasoning = message.isThinking || reasoningExpanded
+    val bubbleShape = remember(isUser) {
+        RoundedCornerShape(
+            topStart = if (isUser) 16.dp else 8.dp,
+            topEnd = if (isUser) 8.dp else 16.dp,
+            bottomStart = 16.dp,
+            bottomEnd = 16.dp
+        )
+    }
 
     Row(
         modifier = modifier
@@ -169,14 +188,21 @@ fun ChatMessageItem(
                         } else {
                             colorResource(R.color.chat_bubble_bg_assist)
                         },
-                        shape = RoundedCornerShape(
-                            topStart = if (isUser) 16.dp else 8.dp,
-                            topEnd = if (isUser) 8.dp else 16.dp,
-                            bottomStart = 16.dp,
-                            bottomEnd = 16.dp
-                        )
+                        shape = bubbleShape,
                     ),
             ) {
+                // 收藏跳转的高亮层：垫在内容之下，只染气泡底色，不糊正文。
+                if (highlightAlpha > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = highlightAlpha),
+                                shape = bubbleShape,
+                            ),
+                    )
+                }
+
                 Column(
                     modifier = Modifier.padding(12.dp)
                 ) {
@@ -596,11 +622,34 @@ fun ChatMessageList(
     onFavoriteMessage: (String) -> Unit = {},
     favoritedMessageIds: Set<String> = emptySet(),
     isResponding: Boolean = false,
+    /** 需要滚动定位并闪烁两遍的消息（收藏跳转）。 */
+    highlight: MessageHighlight? = null,
+    onHighlightConsumed: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val displayMessages = remember(messages) { messages.asReversed() }
     var shouldFollowBottom by remember { mutableStateOf(true) }
     var isAutoScrolling by remember { mutableStateOf(false) }
+
+    // 供自动跟底的副作用读取，避免把 highlight 加进它的 key 后因高亮消费而再次贴底。
+    val currentHighlight by rememberUpdatedState(highlight)
+
+    /** 高亮闪烁的不透明度，由下面的副作用驱动，直接喂给命中的气泡。 */
+    val highlightAlpha = remember { Animatable(0f) }
+
+    /**
+     * 定位高亮目标在 [messages] 中的下标。
+     *
+     * 优先按消息 ID；远端消息 ID 每次加载都会按内容重算，因此再用 role + 正文兜底。
+     * 收藏写入的内容就是 `content.ifBlank { reasoningContent }`，纯思考消息才能对上。
+     */
+    fun indexOfHighlight(target: MessageHighlight): Int {
+        val byId = messages.indexOfFirst { it.id == target.messageId }
+        if (byId >= 0) return byId
+        return messages.indexOfFirst {
+            it.role == target.role && it.content.ifBlank { it.reasoningContent } == target.content
+        }
+    }
 
     val isAtBottom by remember {
         derivedStateOf {
@@ -635,8 +684,9 @@ fun ChatMessageList(
     val latestMessage = messages.lastOrNull()
 
     // 新消息到来且仍处于跟底状态时，自动把最新消息贴到底边。
+    // 有高亮待处理时不贴底，否则会和收藏跳转的滚动定位互抢位置。
     LaunchedEffect(latestMessage?.id, shouldFollowBottom) {
-        if (latestMessage == null || !shouldFollowBottom) {
+        if (latestMessage == null || !shouldFollowBottom || currentHighlight != null) {
             return@LaunchedEffect
         }
 
@@ -646,6 +696,46 @@ fun ChatMessageList(
         } finally {
             isAutoScrolling = false
         }
+    }
+
+    // 收藏跳转：滚动到目标消息并闪烁两遍，然后消费掉高亮，避免残留在下个会话误闪。
+    LaunchedEffect(highlight?.messageId, highlight?.content, messages.size) {
+        val target = highlight ?: return@LaunchedEffect
+        // 消息尚未到位时保持等待，等 messages 变化重新触发。
+        if (messages.isEmpty()) return@LaunchedEffect
+
+        val targetIndex = indexOfHighlight(target)
+        if (targetIndex < 0) {
+            // 消息已被删除或不属于当前会话：直接消费，让界面回到正常状态。
+            onHighlightConsumed()
+            return@LaunchedEffect
+        }
+
+        // 列表是 reverseLayout + asReversed()，所以 index 需要镜像；typing_indicator 会占掉头部的 0 号位。
+        val hasTypingIndicator = isResponding && messages.none {
+            it.role == MessageRole.ASSISTANT && (it.isThinking || it.isGenerating)
+        }
+        val lazyIndex = (if (hasTypingIndicator) 1 else 0) + (messages.lastIndex - targetIndex)
+
+        // 定位期间及定位后都不再自动贴底，让用户停在被跳转到的这条历史消息上。
+        shouldFollowBottom = false
+        isAutoScrolling = true
+        try {
+            listState.animateScrollToItem(lazyIndex)
+        } finally {
+            isAutoScrolling = false
+        }
+
+        highlightAlpha.snapTo(0f)
+        repeat(2) {
+            highlightAlpha.animateTo(HIGHLIGHT_PEAK_ALPHA, tween(HIGHLIGHT_FADE_DURATION_MS))
+            highlightAlpha.animateTo(0f, tween(HIGHLIGHT_FADE_DURATION_MS))
+        }
+        onHighlightConsumed()
+    }
+
+    val highlightedIndex = remember(highlight, messages) {
+        highlight?.let { indexOfHighlight(it) } ?: -1
     }
 
     if (messages.isEmpty()) {
@@ -671,10 +761,13 @@ fun ChatMessageList(
                 }
             }
             
-            items(
+            itemsIndexed(
                 items = displayMessages,
-                key = { it.id }
-            ) { message ->
+                key = { _, message -> message.id }
+            ) { displayIndex, message ->
+                // displayMessages 是 messages 的逆序，命中项的下标需要镜像回原列表判断。
+                val isHighlighted = highlightedIndex >= 0 &&
+                    messages.lastIndex - displayIndex == highlightedIndex
                 ChatMessageItem(
                     message = message,
                     onEditUserMessage = onEditUserMessage,
@@ -682,6 +775,7 @@ fun ChatMessageList(
                     onDeleteMessage = onDeleteMessage,
                     onFavoriteMessage = onFavoriteMessage,
                     isFavorited = favoritedMessageIds.contains(message.id),
+                    highlightAlpha = if (isHighlighted) highlightAlpha.value else 0f,
                 )
             }
         }

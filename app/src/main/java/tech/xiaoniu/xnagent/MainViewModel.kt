@@ -10,12 +10,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tech.xiaoniu.xnagent.data.repository.AuthRepository
 import tech.xiaoniu.xnagent.data.repository.AuthSession
+import tech.xiaoniu.xnagent.ui.model.MessageHighlight
 import javax.inject.Inject
 
 sealed interface MainDestination {
     data object Home : MainDestination
     data object Settings : MainDestination
     data object Login : MainDestination
+
+    /**
+     * 智能体详情页。
+     *
+     * @param agentId 目标智能体 ID；为 null 表示新建自定义智能体。
+     */
+    data class AgentDetail(val agentId: String?) : MainDestination
 }
 
 data class MainUiState(
@@ -27,6 +35,12 @@ data class MainUiState(
      * 设为非空时，主页在初始化时需要选中该会话；消费后清空，避免重复触发。
      */
     val pendingSessionId: String? = null,
+    /**
+     * 待高亮定位的消息。
+     *
+     * 与 [pendingSessionId] 配对：收藏跳转时先选中会话，再让主页滚动到该消息并闪烁；消费后清空。
+     */
+    val pendingHighlight: MessageHighlight? = null,
 )
 
 /**
@@ -103,9 +117,10 @@ class MainViewModel @Inject constructor(
     /**
      * 跳转到首页并选中指定会话。
      *
-     * 用于设置页添加智能体后自动跳转到对应聊天页。
+     * 用于设置页添加智能体后自动跳转到对应聊天页；[highlight] 非空时（收藏跳转）
+     * 主页会在消息加载完成后滚动定位并闪烁两遍。
      */
-    fun openChat(sessionId: String) {
+    fun openChat(sessionId: String, highlight: MessageHighlight? = null) {
         if (sessionId.isBlank()) return
         _uiState.update { state ->
             state.copy(
@@ -115,15 +130,30 @@ class MainViewModel @Inject constructor(
                     MainDestination.Login
                 },
                 pendingSessionId = sessionId,
+                pendingHighlight = highlight,
             )
         }
     }
 
-    /** 清除已消费的待选中会话 ID。 */
+    /** 打开智能体详情页；[agentId] 为 null 表示新建自定义智能体。 */
+    fun openAgentDetail(agentId: String?) {
+        _uiState.update { state ->
+            if (!state.session.canEnterHome) {
+                state.copy(destination = MainDestination.Login)
+            } else {
+                state.copy(destination = MainDestination.AgentDetail(agentId))
+            }
+        }
+    }
+
+    /** 清除已消费的待选中会话 ID 与高亮信息。 */
     fun consumePendingSessionId() {
         _uiState.update { state ->
-            if (state.pendingSessionId == null) state
-            else state.copy(pendingSessionId = null)
+            if (state.pendingSessionId == null && state.pendingHighlight == null) {
+                state
+            } else {
+                state.copy(pendingSessionId = null, pendingHighlight = null)
+            }
         }
     }
 

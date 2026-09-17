@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import tech.xiaoniu.xnagent.ui.screen.agent.AgentDetailScreen
 import tech.xiaoniu.xnagent.ui.screen.home.HomeScreen
 import tech.xiaoniu.xnagent.ui.screen.login.LoginScreen
 import tech.xiaoniu.xnagent.ui.screen.settings.SettingsScreen
@@ -31,14 +32,17 @@ class MainActivity : ComponentActivity() {
             XNAgentTheme {
                 val viewModel: MainViewModel = hiltViewModel()
                 val uiState by viewModel.uiState.collectAsState()
+                // 先取出目标再 when：uiState 是委托属性，直接 when(uiState.destination) 会挡住分支内的智能转换。
+                val destination = uiState.destination
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    when (uiState.destination) {
+                    when (destination) {
                         MainDestination.Home -> {
                             HomeScreen(
                                 onOpenSettings = viewModel::openSettings,
                                 onOpenLogin = viewModel::openLogin,
                                 initialSessionId = uiState.pendingSessionId,
                                 onConsumeInitialSessionId = viewModel::consumePendingSessionId,
+                                initialHighlight = uiState.pendingHighlight,
                             )
                         }
 
@@ -54,7 +58,19 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     viewModel::logout
                                 },
-                                onOpenChat = viewModel::openChat,
+                                onOpenFavorite = { sessionId, highlight ->
+                                    viewModel.openChat(sessionId, highlight)
+                                },
+                                onOpenAgentDetail = viewModel::openAgentDetail,
+                            )
+                        }
+
+                        is MainDestination.AgentDetail -> {
+                            AgentDetailScreen(
+                                agentId = destination.agentId,
+                                // 详情页只从设置页进入，返回也应回到设置页而不是首页。
+                                onBack = viewModel::openSettings,
+                                onOpenChat = { sessionId -> viewModel.openChat(sessionId) },
                             )
                         }
 

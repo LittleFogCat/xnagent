@@ -55,21 +55,25 @@ tech.xiaoniu.xnagent/
 │   │   ├── AuthStore.kt
 │   │   ├── TokenRefreshHandler.kt
 │   │   ├── XNDatabase.kt
-│   │   ├── dao/ChatDao.kt
-│   │   ├── entity/         # Session / ChatMessage
+│   │   ├── Migrations.kt   # MIGRATION_1_2 / MIGRATION_2_3 …
+│   │   ├── dao/            # ChatDao.kt / AgentDao.kt
+│   │   ├── entity/         # Session / ChatMessage / Agent
 │   │   └── network/        # NetworkConfig / Interceptor
 │   ├── mock/               # 假数据 / 桩
 │   ├── remote/
 │   │   ├── api/            # AuthApi / ChatApi / StreamChatApi
 │   │   └── dto/            # 请求/响应 DTO
-│   └── repository/         # HomeRepository / AuthRepository / FavoriteRepository
+│   └── repository/         # HomeRepository / AuthRepository / FavoriteRepository /
+│                           # AgentRepository
 └── ui/
     ├── UiExts.kt
     ├── component/          # ChatMessageList / ChatInputBar / DropdownSelector /
-    │                       # MarkdownText / UserAvatar
+    │                       # MarkdownText / UserAvatar / IosMenuDivider
     ├── model/              # HomeUiState / ChatMessage / ModelUiModel /
-    │                       # LoginUiState / SessionUiModel / AgentMode …
+    │                       # LoginUiState / SessionUiModel / AgentMode /
+    │                       # MessageHighlight …
     ├── screen/
+    │   ├── agent/          # AgentDetailScreen + AgentDetailViewModel + AgentDetailIntent
     │   ├── home/           # HomeScreen + HomeViewModel + HomeIntent
     │   ├── login/          # LoginScreen + LoginViewModel + LoginIntent
     │   └── settings/       # SettingsScreen + SettingsViewModel
@@ -98,7 +102,7 @@ tech.xiaoniu.xnagent/
 ## 4. 严禁的反模式
 
 - ❌ 在 `ui/screen/<feature>/` 下新建 `XxxRepository` / `XxxRepositoryImpl`；
-  → 统一放 `data/repository/`，目前 `ui/screen/home/HomeRepository` 是 Stale 副本，不再使用。
+  → 统一放 `data/repository/`（历史上 `ui/screen/home/HomeRepository` 有过一份 Stale 副本，已删除）。
 - ❌ 把 DTO 暴露给 UI 层；
   → UI 一律使用 `ui/model/` 下的 UiModel，Repository 完成 DTO ↔ UiModel 映射。
 - ❌ 把 Composable 与 ViewModel 写在同一文件；

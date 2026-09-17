@@ -51,6 +51,12 @@ data class HomeUiState(
      * 清空，避免重复消费。
      */
     val errorMessage: String? = null,
+
+    /**
+     * 需要闪烁定位的消息。由收藏跳转写入，UI 滚动到该消息并高亮两遍后调用
+     * [tech.xiaoniu.xnagent.ui.screen.home.HomeIntent.ConsumeHighlight] 清空。
+     */
+    val highlight: MessageHighlight? = null,
 )
 
 /**
@@ -84,10 +90,29 @@ data class SessionUiModel(
 /**
  * 智能体 UI 结构。
  *
- * 由远端 `AgentInfoDto` 转换而来，用于抽屉条目显示智能体名称。当前只用 id / name；
- * [tech.xiaoniu.xnagent.data.remote.dto.AgentInfoDto.avatarUrl] 暂未渲染——待引入图片加载库后再补。
+ * 由远端 `AgentInfoDto` 与本地 `agent` 表合并而来：本地自定义智能体、以及对系统智能体的
+ * 本地覆盖（名称 / 简介 / 提示词）都会体现在这里。用于设置页列表与抽屉条目展示；
+ * [avatarUrl] 暂未渲染——待引入图片加载库后再补。
  */
 data class AgentUiModel(
     val id: String,
     val name: String,
-)
+    val role: String = "",
+    val description: String = "",
+    /** 本地提示词。非空时以本地为准，请求体注入 system 消息且不再传 chatTarget。 */
+    val prompt: String = "",
+    val avatarUrl: String? = null,
+    /** true 表示服务端不存在该 identity，是纯本地智能体。 */
+    val isCustom: Boolean = false,
+    /** true 表示这是对服务端智能体的本地覆盖（改过名称 / 简介 / 提示词）。 */
+    val isOverridden: Boolean = false,
+    /** 已绑定的会话 ID；非空即「已添加」。系统智能体由远端 chatTarget 反查，自定义智能体取本地行。 */
+    val boundSessionId: String? = null,
+    /** 仅列表不展示，可恢复。 */
+    val isHidden: Boolean = false,
+    /** 服务端智能体的删除墓碑，避免刷新后复活。 */
+    val isDeleted: Boolean = false,
+) {
+    /** 是否已添加到聊天列表（存在绑定会话）。 */
+    val isBound: Boolean get() = !boundSessionId.isNullOrBlank()
+}
